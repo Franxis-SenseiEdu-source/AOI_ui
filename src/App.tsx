@@ -1,5 +1,7 @@
 import type React from 'react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { AuditLog, HISTORY, HomeIcon, legacyCid, Login, AboutAOI, ResearchHub, AccountSettings, userFrom, initials, newCid, PolicyLibrary, Portal, SOURCE_DOCS, SourceSheet, synthRow, DOCS } from './views'
+import type { AuditRow, Role, User, View } from './views'
 
 type AvatarState = 'idle' | 'listening' | 'processing' | 'responding' | 'error' | 'degraded'
 
@@ -12,6 +14,7 @@ type Msg = {
   sources?: string[]
   external?: boolean
   warn?: boolean
+  cid?: string
   time: string
 }
 
@@ -32,8 +35,42 @@ function classify(t: string): Route {
   return 'general'
 }
 
+const HONORIFIC = '(?:Prof\\.?|Professor|Dr\\.?|Mr\\.?|Ms\\.?|Mrs\\.?)'
+const SUBJECTS: Record<string, string> = { CS: 'computer science', IT: 'information technology', MATH: 'mathematics', ENG: 'English', BIO: 'biology', CHEM: 'chemistry', PHYS: 'physics', PE: 'physical education', NSTP: 'national service' }
+const COURSE_RE = /\[?\b([A-Z]{2,5})\s?\d{3}\b\]?/g
+const PII_PATTERNS: { re: RegExp; layer: 1 | 2 }[] = [
+  { re: /[\w.+-]+@[\w-]+\.[\w.]+/g, layer: 1 },
+  { re: /\b\d{2}-\d{4,6}\b/g, layer: 1 },
+  { re: /\b(\+?63|0)9\d{9}\b/g, layer: 1 },
+  { re: new RegExp(`\\[?\\b${HONORIFIC}\\s+[A-Z][a-z]+\\]?`, 'g'), layer: 1 },
+  { re: /\b(my name is|i am|i'm)\s+[A-Z][a-z]+(\s[A-Z][a-z]+)?/g, layer: 1 },
+  { re: /MSU[-\s]?Zamboanga Sibugay( University)?|MSU-ZSU/gi, layer: 1 },
+  { re: COURSE_RE, layer: 2 },
+]
+
+function detectPII(t: string): { text: string; layer?: 1 | 2 }[] {
+  const hits: { s: number; e: number; layer: 1 | 2 }[] = []
+  for (const { re, layer } of PII_PATTERNS) {
+    for (const m of t.matchAll(new RegExp(re.source, re.flags))) hits.push({ s: m.index!, e: m.index! + m[0].length, layer })
+  }
+  hits.sort((a, b) => a.s - b.s)
+  const out: { text: string; layer?: 1 | 2 }[] = []
+  let at = 0
+  for (const h of hits) {
+    if (h.s < at) continue
+    if (h.s > at) out.push({ text: t.slice(at, h.s) })
+    out.push({ text: t.slice(h.s, h.e), layer: h.layer })
+    at = h.e
+  }
+  if (at < t.length) out.push({ text: t.slice(at) })
+  return out
+}
+
 function anonymize(t: string) {
   return t
+    .replace(new RegExp(`\\s+from\\s+\\[?${HONORIFIC}\\s+[A-Z][a-z]+\\]?`, 'g'), '')
+    .replace(new RegExp(`\\[?\\b${HONORIFIC}\\s+[A-Z][a-z]+\\]?`, 'g'), 'my instructor')
+    .replace(COURSE_RE, (_, p: string) => `a ${SUBJECTS[p] ?? 'university'} course`)
     .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[email]')
     .replace(/\b\d{2}-\d{4,6}\b/g, '[student ID]')
     .replace(/\b(\+?63|0)9\d{9}\b/g, '[phone]')
@@ -208,10 +245,11 @@ function Avatar({ state, width, variant = 'full' }: { state: AvatarState; width:
   )
 }
 
-function SourceChip({ label, external }: { label: string; external?: boolean }) {
+function SourceChip({ label, external, onOpen }: { label: string; external?: boolean; onOpen: (l: string) => void }) {
   return (
     <button
       type="button"
+      onClick={() => onOpen(label)}
       className={`inline-flex items-center gap-1.5 rounded-[12px] border border-t-line2 px-3 py-1.5 text-[12px] font-medium text-t-fg transition-all active:scale-95 ${external ? 'bg-t-deep hover:brightness-95' : 'bg-t-line hover:brightness-95'}`}
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -263,6 +301,7 @@ const SEED_CHATS = (): Chat[] => {
           role: 'aoi',
           text: 'Freshmen applicants must submit a Form 138, a certificate of good moral character, a PSA birth certificate, and two 2×2 photos.',
           sources: ['Student Handbook p.12', 'Registrar Memo 2025-04'],
+          cid: 'aoi-7x9f2',
           time: '9:12 AM',
         },
       ],
@@ -279,6 +318,7 @@ const SEED_CHATS = (): Chat[] => {
           text: 'The programs differ mainly in eligibility criteria, award coverage, and renewal conditions. Verify against the original papers.',
           sources: ['Semantic Scholar', 'OpenAlex'],
           external: true,
+          cid: 'aoi-m3k8q',
           time: '2:41 PM',
         },
       ],
@@ -296,6 +336,7 @@ const load = <T,>(key: string, fallback: () => T): T => {
 }
 
 const FONT_SIZES = { sm: 13, md: 14, lg: 16 } as const
+const TEXT_ZOOM = { sm: 0.92, md: 1, lg: 1.14 } as const
 type Theme = 'system' | 'light' | 'dark'
 type Settings = { theme: Theme; fontSize: keyof typeof FONT_SIZES; showTime: boolean; bgId: string; bgDim: number; model: string }
 const DEFAULT_SETTINGS: Settings = { theme: 'system', fontSize: 'md', showTime: true, bgId: 'default', bgDim: 35, model: 'AOI General' }
@@ -463,6 +504,18 @@ export default function App() {
   const [degraded, setDegraded] = useState(false)
   const [pending, setPending] = useState<{ text: string; rewritten: string } | null>(null)
   const [showPreview, setShowPreview] = useState(false)
+  const [view, setView] = useState<View>('login')
+  const [user, setUser] = useState<User>(() => load<User>('aoi.user', () => userFrom('juan.delacruz@msuzs.edu.ph', '2024-00123')))
+  const signOut = () => { setSettingsOpen(false); setDrawerOpen(false); setAuditFocus(null); setOpenDoc(null); setDocHighlight(null); setView('login') }
+  const [role, setRole] = useState<Role>(() => {
+    const r = load<string>('aoi.role', () => 'Student')
+    return r === 'Faculty' || r === 'Staff' ? r : 'Student'
+  })
+  const [audit, setAudit] = useState<AuditRow[]>(() => load('aoi.audit', () => HISTORY(Date.now())))
+  const [cite, setCite] = useState<string | null>(null)
+  const [openDoc, setOpenDoc] = useState<string | null>(null)
+  const [docHighlight, setDocHighlight] = useState<string | null>(null)
+  const [auditFocus, setAuditFocus] = useState<string | null>(null)
   const idRef = useRef(1)
   const endRef = useRef<HTMLDivElement>(null)
   const timers = useRef<number[]>([])
@@ -574,6 +627,9 @@ export default function App() {
     return reply
   }
 
+  const record = (cid: string, intent: string, mdl: string, path: string, external: boolean, isDegraded = false) =>
+    setAudit((a) => [{ cid, ts: Date.now(), role, intent, model: mdl, path, external, degraded: isDegraded, user: user.email }, ...a].slice(0, 300))
+
   const deliver = (text: string, route: Route) => {
     setMsgs((m) => [...m, { id: idRef.current++, role: 'user', text, time: stamp(), files: attached.length ? attached : undefined }])
     setAttached([])
@@ -581,16 +637,25 @@ export default function App() {
     later(() => {
       if (/\berror\b/i.test(text)) {
         setPhase('error')
+        const cid = newCid()
+        record(cid, 'Error', 'None', 'Error handler', false)
         setMsgs((m) => [
           ...m,
-          { id: idRef.current++, role: 'aoi', text: 'Sorry, something went wrong while handling that request. Please try again.', time: stamp() },
+          { id: idRef.current++, role: 'aoi', text: 'Sorry, something went wrong while handling that request. Please try again.', cid, time: stamp() },
         ])
         later(() => setPhase('idle'), 2000)
         return
       }
       setPhase('responding')
       later(() => {
-        setMsgs((m) => [...m, { id: idRef.current++, role: 'aoi', external: route === 'research', time: stamp(), ...buildReply(route) }])
+        const cid = newCid()
+        const intent = { homework: 'Homework (refused)', policy: 'Policy', research: 'Research', general: 'General' }[route]
+        if (degraded) record(cid, intent, 'AOI Local Fallback', 'Local fallback', false, true)
+        else if (route === 'homework') record(cid, intent, 'None (rule-based)', 'Policy Guard → Refused', false)
+        else if (route === 'research') record(cid, intent, 'External LLM (anonymized)', 'PII Stripper → External', true)
+        else if (route === 'policy') record(cid, intent, model, 'Local RAG', false)
+        else record(cid, intent, model, 'Local LLM', false)
+        setMsgs((m) => [...m, { id: idRef.current++, role: 'aoi', external: route === 'research', cid, time: stamp(), ...buildReply(route) }])
         later(() => setPhase('idle'), 1000)
       }, 600)
     }, 1500)
@@ -610,6 +675,14 @@ export default function App() {
     }
     deliver(text, route)
   }
+
+  const [autoAsk, setAutoAsk] = useState<string | null>(null)
+  useEffect(() => {
+    if (autoAsk === null || view !== 'chat') return
+    const t = autoAsk
+    setAutoAsk(null)
+    send(t)
+  })
 
   const confirm = () => {
     if (!pending) return
@@ -691,6 +764,7 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement
       const typing = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
+      if (view !== 'chat') return
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         newChat()
@@ -719,6 +793,7 @@ export default function App() {
         setModelOpen(false)
         setSheetOpen(false)
         setSettingsOpen(false)
+        setCite(null)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -873,9 +948,16 @@ export default function App() {
   }, [chats])
   useEffect(() => {
     try {
-      localStorage.setItem('aoi.settings', JSON.stringify(settings))
+      localStorage.setItem('aoi.role', JSON.stringify(role))
+      localStorage.setItem('aoi.audit', JSON.stringify(audit))
     } catch {}
-  }, [settings])
+  }, [role, audit])
+  useEffect(() => {
+    try {
+      localStorage.setItem('aoi.settings', JSON.stringify(settings))
+      localStorage.setItem('aoi.user', JSON.stringify(user))
+    } catch {}
+  }, [settings, user])
 
   useEffect(() => {
     const el = inputRef.current
@@ -922,6 +1004,115 @@ export default function App() {
     setListening(false)
     setEmptyVisible(true)
     setDrawerOpen(false)
+  }
+
+  const auditAll = useMemo(() => {
+    const known = new Set(audit.map((r) => r.cid))
+    const extra: AuditRow[] = []
+    for (const c of chats)
+      for (const m of c.msgs) {
+        if (m.role !== 'aoi') continue
+        const cid = m.cid ?? legacyCid(c.id, m.id)
+        if (known.has(cid)) continue
+        known.add(cid)
+        extra.push({ ...synthRow(cid, c.updated, role, m), user: user.email })
+      }
+    const all = [...audit, ...extra].sort((a, b) => b.ts - a.ts)
+    return role === 'Admin' ? all : all.filter((r) => r.user === user.email)
+  }, [audit, chats, role, user.email])
+
+  const openCitation = (label: string) => {
+    const d = SOURCE_DOCS[label]
+    setCite(null)
+    if (d?.docId) {
+      setOpenDoc(d.docId)
+      setDocHighlight(d.snippet)
+      setView('policies')
+    } else showToast('External source opens outside AOI (mock)')
+  }
+
+  const toastEl = (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`pointer-events-none fixed left-1/2 z-[80] -translate-x-1/2 rounded-full bg-[#0A0A0A] px-4 py-2 text-[13px] font-medium text-white shadow-[0_8px_24px_rgba(0,0,0,0.35)] ring-1 ring-white/15 transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${toastOn ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'}`}
+      style={{ bottom: 'calc(40px + var(--sa-bottom))' }}
+    >
+      {toast}
+    </div>
+  )
+
+  if (view === 'login') {
+    return (
+      <div className="aoi-fade-in h-full w-full">
+        <Login onLogin={(e, i) => { const u = userFrom(e, i); setUser(u); setRole(u.role); setView('portal') }} />
+      </div>
+    )
+  }
+
+  if (view !== 'chat') {
+    const home = () => {
+      setView('portal')
+      setOpenDoc(null)
+      setDocHighlight(null)
+    }
+    return (
+      <div
+        className="relative mx-auto flex h-full w-full max-w-[430px] flex-col overflow-hidden pl-[var(--sa-left)] pr-[var(--sa-right)] text-t-fg transition-[background] duration-300 md:max-w-none"
+        style={{ background: bg.css }}
+      >
+        <div key={view} className="aoi-fade-in min-h-0" style={{ zoom: TEXT_ZOOM[settings.fontSize], height: `${100 / TEXT_ZOOM[settings.fontSize]}%` }}>
+          {view === 'portal' && (
+            <Portal
+              role={role}
+              name={user.name}
+              onAsk={(t) => { newChat(); setModel('AOI General'); setView('chat'); setAutoAsk(t) }}
+              avatar={<Avatar state="idle" width={isWide ? 190 : 112} />}
+              onSignOut={signOut}
+              counts={{ chats: chats.length, queries: auditAll.length, docs: DOCS.length }}
+              onOpen={(v) => {
+                setAuditFocus(null)
+                setOpenDoc(null)
+                setDocHighlight(null)
+                setView(v)
+              }}
+            />
+          )}
+          {view === 'account' && (
+            <AccountSettings
+              user={user}
+              role={role}
+              theme={settings.theme}
+              setTheme={(t) => setSettings((x) => ({ ...x, theme: t }))}
+              fontSize={settings.fontSize}
+              setFontSize={(f) => setSettings((x) => ({ ...x, fontSize: f }))}
+              showTime={settings.showTime}
+              setShowTime={(b) => setSettings((x) => ({ ...x, showTime: b }))}
+              chatCount={chats.length}
+              onClearChats={clearAll}
+              onReset={() => setSettings(DEFAULT_SETTINGS)}
+              onHome={home}
+              onSignOut={signOut}
+            />
+          )}
+          {view === 'audit' && <AuditLog rows={auditAll} onHome={home} focusCid={auditFocus} admin={role === 'Admin'} />}
+          {view === 'about' && <AboutAOI onHome={home} />}
+          {view === 'research' && (
+            <ResearchHub
+              onHome={home}
+              prompts={SUGGESTION_POOL.filter((x) => x.tag === 'Research').slice(0, 6)}
+              onStart={(p) => {
+                newChat()
+                setView('chat')
+                setAutoAsk(p)
+              }}
+            />
+          )}
+          {view === 'policies' && <PolicyLibrary openId={openDoc} setOpenId={(id) => { setOpenDoc(id); setDocHighlight(null) }} highlight={docHighlight} onHome={home} onToast={showToast} />}
+        </div>
+        {toastEl}
+      </div>
+    )
   }
 
   return (
@@ -1132,13 +1323,16 @@ export default function App() {
               </svg>
               Settings
             </button>
-            <button type="button" className="mt-0.5 flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-left transition-colors duration-200 ease-in-out hover:bg-t-surface">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#800000] text-[12px] font-bold text-white">JD</span>
-              <span className="min-w-0">
-                <span className="block truncate text-[14px] font-medium">Juan Dela Cruz</span>
-                <span className="block text-[12px] text-t-muted">Account · Student</span>
+            <div className="mt-0.5 flex items-center gap-1 rounded-[10px] px-3 py-2">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#800000] text-[12px] font-bold text-white">{initials(user.name)}</span>
+              <span className="min-w-0 flex-1 pl-2">
+                <span className="block truncate text-[14px] font-medium">{user.name}</span>
+                <span className="block text-[12px] text-t-muted">Account · {role}</span>
               </span>
-            </button>
+              <button type="button" onClick={signOut} aria-label="Log out" title="Log out" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-t-muted transition-colors duration-200 hover:bg-[#800000] hover:text-white active:scale-90">
+                <svg {...ico} width={17} height={17}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5M21 12H9" /></svg>
+              </button>
+            </div>
           </div>
         </aside>
       </div>
@@ -1147,16 +1341,27 @@ export default function App() {
       <header
         className={`relative z-30 grid h-[calc(3.5rem+var(--sa-top))] shrink-0 pt-[var(--sa-top)] grid-cols-[1fr_auto_1fr] items-center border-b px-3 md:px-6 lg:flex lg:justify-between shadow-[0_4px_20px_rgba(0,0,0,0.3)] transition-colors duration-300 ease-in-out ${degraded ? 'border-[#92400E] bg-[#B45309] text-white' : 'border-t-line bg-t-surface text-t-fg'}`}
       >
-        <button
-          type="button"
-          aria-label="Open menu"
-          onClick={() => setDrawerOpen(true)}
-          className="lg:hidden flex h-10 w-10 items-center justify-center justify-self-start rounded-full transition-colors duration-200 ease-in-out hover:bg-t-tint/10 active:bg-t-tint/10"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-            <path d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-0.5 justify-self-start">
+          <button
+            type="button"
+            aria-label="Open menu"
+            onClick={() => setDrawerOpen(true)}
+            className="lg:hidden flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200 ease-in-out hover:bg-t-tint/10 active:bg-t-tint/10"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+              <path d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            aria-label="Back to Portal"
+            title="Back to Portal"
+            onClick={() => setView('portal')}
+            className="flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200 ease-in-out hover:bg-t-tint/10 active:scale-90"
+          >
+            <HomeIcon />
+          </button>
+        </div>
 
         <div className="relative">
           <button
@@ -1381,11 +1586,24 @@ export default function App() {
                       <div className="aoi-fade-in mt-1 flex flex-wrap items-center gap-1.5">
                         {m.external && <span className="text-[12px] text-t-muted">Sources:</span>}
                         {m.sources.map((s) => (
-                          <SourceChip key={s} label={s} external={m.external} />
+                          <SourceChip key={s} label={s} external={m.external} onOpen={setCite} />
                         ))}
                       </div>
                     )}
                     {m.warn && m.id !== revealId && <p className="aoi-fade-in mt-1 text-[12px] font-medium text-t-warn">⚠ No sources available in degraded mode.</p>}
+                    {m.id !== revealId && (
+                      <button
+                        type="button"
+                        title="View in System Audit Log"
+                        onClick={() => {
+                          setAuditFocus(m.cid ?? legacyCid(activeId, m.id))
+                          setView('audit')
+                        }}
+                        className="aoi-fade-in px-1 font-mono text-[10px] tracking-wide text-t-subtle transition-colors hover:text-t-accent"
+                      >
+                        ID: {m.cid ?? legacyCid(activeId, m.id)}
+                      </button>
+                    )}
                     </div>
                   </div>
                 ),
@@ -1533,6 +1751,8 @@ export default function App() {
         <p className="mx-auto mt-2 hidden max-w-[800px] text-center text-[11px] text-t-subtle md:block">AOI can make mistakes. Verify important information with the registrar.</p>
       </footer>
       </div>
+
+      <SourceSheet label={cite} onClose={() => setCite(null)} onView={openCitation} />
 
       <div className={`absolute inset-0 z-[60] flex items-end justify-center ${sheetOpen ? '' : 'pointer-events-none'}`} aria-hidden={!sheetOpen}>
         <div
@@ -1696,13 +1916,17 @@ export default function App() {
                 Clear all chats
               </button>
             </div>
+            <button type="button" onClick={signOut} className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-[12px] text-[14px] font-semibold text-white transition-all hover:brightness-110 active:scale-[0.98]" style={{ background: 'linear-gradient(135deg, #B01E2E, #800000 55%, #4a0000)' }}>
+              <svg {...ico} width={16} height={16}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5M21 12H9" /></svg>
+              Log out
+            </button>
           </div>
         </div>
       )}
 
       {pending && (
         <div className="aoi-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-5 backdrop-blur-[8px]" role="dialog" aria-modal="true" aria-labelledby="consent-title">
-          <div className="aoi-spring no-scrollbar max-h-[90vh] w-full max-w-[380px] overflow-y-auto md:max-w-[500px] md:p-6 rounded-[20px] border border-t-line bg-t-surface p-5 text-t-fg shadow-[0_4px_12px_rgba(0,0,0,0.4)]">
+          <div className="aoi-spring no-scrollbar max-h-[90vh] w-full max-w-[380px] overflow-y-auto md:max-w-[560px] md:p-6 rounded-[20px] border border-t-line bg-t-surface p-5 text-t-fg shadow-[0_4px_12px_rgba(0,0,0,0.4)]">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#800000]/30 text-t-accent">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
@@ -1716,7 +1940,7 @@ export default function App() {
               This query may be sent to an external AI provider with identifying information removed. Do you want to continue?
             </p>
             <p className="mt-2 text-[12px] leading-snug text-t-muted">
-              Your query will be anonymized. You can review the rewritten prompt before it’s sent.
+              Your query is anonymized in two layers. Review exactly what leaves the university below.
             </p>
             <div className="mt-4 flex flex-col gap-2">
               <button
@@ -1731,26 +1955,46 @@ export default function App() {
               </button>
             </div>
             <div className="mt-4 border-t border-t-line pt-3">
-              <button
-                type="button"
-                aria-expanded={showPreview}
-                onClick={() => setShowPreview((s) => !s)}
-                className="flex w-full items-center justify-between text-[12px] font-medium text-t-muted"
-              >
-                Preview rewritten prompt
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${showPreview ? 'rotate-180' : ''}`}>
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-              </button>
-              {showPreview && (
-                <textarea
-                  value={pending.rewritten}
-                  onChange={(e) => setPending((p) => (p ? { ...p, rewritten: e.target.value } : p))}
-                  rows={4}
-                  aria-label="Rewritten prompt"
-                  className="mt-2 w-full resize-none rounded-[12px] border border-t-line bg-t-bg p-3 text-[13px] leading-relaxed text-t-fg outline-none focus:border-[#800000]"
-                />
-              )}
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-t-muted">PII Stripper preview</p>
+                <button type="button" aria-expanded={showPreview} onClick={() => setShowPreview((v) => !v)} className="text-[12px] font-medium text-t-accent hover:underline">
+                  {showPreview ? 'Done editing' : 'Edit rewritten prompt'}
+                </button>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="rounded-[12px] border border-t-line bg-t-bg p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-t-muted">Before</p>
+                  <p className="mt-1.5 text-[12.5px] leading-relaxed text-t-fg" aria-label="Original prompt">
+                    {detectPII(pending.text).map((seg, i) =>
+                      seg.layer ? (
+                        <mark key={i} className={`rounded px-1 text-t-fg ${seg.layer === 1 ? 'bg-[#800000]/35' : 'bg-sky-400/30'}`}>
+                          {seg.text}
+                        </mark>
+                      ) : (
+                        <span key={i}>{seg.text}</span>
+                      ),
+                    )}
+                  </p>
+                </div>
+                <div className="rounded-[12px] border border-[#800000]/60 bg-[#800000]/10 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-t-accent">After</p>
+                  {showPreview ? (
+                    <textarea
+                      value={pending.rewritten}
+                      onChange={(e) => setPending((p) => (p ? { ...p, rewritten: e.target.value } : p))}
+                      rows={4}
+                      aria-label="Rewritten prompt"
+                      className="mt-1.5 w-full resize-none rounded-lg border border-t-line bg-t-bg p-2 text-[12.5px] leading-relaxed text-t-fg outline-none focus:border-[#800000]"
+                    />
+                  ) : (
+                    <p className="mt-1.5 text-[12.5px] leading-relaxed text-t-fg" aria-label="Rewritten prompt">{pending.rewritten}</p>
+                  )}
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-t-muted">
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-[#800000]/60" />Layer 1 · Pattern strip (names, IDs, contacts)</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-sky-400/60" />Layer 2 · Generalize (course → subject)</span>
+              </div>
             </div>
           </div>
         </div>
