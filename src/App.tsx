@@ -246,7 +246,7 @@ const MODELS = [
   { name: 'AOI STEM Fast', tag: 'Quick', desc: 'Short, fast answers for STEM questions' },
 ]
 
-type Chat = { id: number; title: string; msgs: Msg[]; updated: number }
+type Chat = { id: number; title: string; msgs: Msg[]; updated: number; pinned?: boolean; renamed?: boolean }
 
 const DAY = 86_400_000
 const SEED_CHATS = (): Chat[] => {
@@ -361,6 +361,14 @@ const SUGGESTION_POOL: { tag: Tag; title: string; hint: string; prompt: string }
   { tag: 'Campus', title: 'Prepare for a defense', hint: 'Likely panel questions and delivery tips', prompt: 'How do I prepare for a thesis defense, and what questions will the panel likely ask?' },
   { tag: 'Campus', title: 'Write a formal email to a professor', hint: 'Tone, structure and a ready template', prompt: 'Help me write a respectful email asking my professor for a deadline extension' },
   { tag: 'Campus', title: 'Career paths after graduation', hint: 'Jobs, licensure and further study', prompt: 'What career paths, licensure exams and graduate studies are open after an information technology degree?' },
+  { tag: 'Research', title: 'Turn a topic into research questions', hint: 'Narrow a broad idea into testable questions', prompt: 'Help me turn the topic "social media use among senior high school students" into three focused, testable research questions' },
+  { tag: 'Research', title: 'Spot a weak methodology', hint: 'Sampling, bias and validity checks', prompt: 'What are the most common methodology flaws in student research papers, and how do I check my own for sampling bias and validity?' },
+  { tag: 'Policy', title: 'Grading system and honors', hint: 'GWA, Dean’s List and retention rules', prompt: 'How does the grading system work, and what GWA is needed for the Dean’s List and to keep my scholarship?' },
+  { tag: 'Policy', title: 'Requesting academic records', hint: 'TOR, certifications and processing time', prompt: 'How do I request my transcript of records and other certifications from the registrar?' },
+  { tag: 'Study', title: 'Make flashcards from my notes', hint: 'Active recall with a clear format', prompt: 'Show me how to turn lecture notes into effective flashcards for active recall' },
+  { tag: 'Study', title: 'Summarize a journal article fast', hint: 'Read smarter in 15 minutes', prompt: 'Give me a step-by-step method to read and summarize a journal article in 15 minutes' },
+  { tag: 'Campus', title: 'Balance school and part-time work', hint: 'A realistic weekly schedule', prompt: 'Help me plan a weekly schedule that balances classes, study time and a part-time job' },
+  { tag: 'Campus', title: 'Present research confidently', hint: 'Slides, pacing and handling questions', prompt: 'What are good practices for presenting research in a 10-minute class report, including slides and Q&A?' },
 ]
 function pickSuggestions() {
   const tags: Tag[] = ['Research', 'Policy', 'Study', 'Campus']
@@ -374,7 +382,45 @@ function pickSuggestions() {
   return picked
 }
 
-function Reveal({ text, onTick, onDone }: { text: string; onTick: () => void; onDone: () => void }) {
+function inline(t: string) {
+  return t.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((p, i) =>
+    p.startsWith('**') && p.endsWith('**') && p.length > 4 ? (
+      <strong key={i} className="font-semibold">{p.slice(2, -2)}</strong>
+    ) : p.startsWith('`') && p.endsWith('`') && p.length > 2 ? (
+      <code key={i} className="rounded bg-t-tint/10 px-1 py-0.5 text-[0.9em]">{p.slice(1, -1)}</code>
+    ) : (
+      p
+    ),
+  )
+}
+
+function Rich({ text }: { text: string }) {
+  const lines = text.split('\n')
+  const out: React.ReactNode[] = []
+  let list: string[] = []
+  const flush = () => {
+    if (list.length) {
+      out.push(
+        <ul key={out.length} className="my-1 list-disc space-y-1 pl-5">
+          {list.map((l, i) => <li key={i}>{inline(l)}</li>)}
+        </ul>,
+      )
+      list = []
+    }
+  }
+  lines.forEach((l) => {
+    const m = l.match(/^\s*[-•*]\s+(.*)/)
+    if (m) list.push(m[1])
+    else {
+      flush()
+      if (l.trim()) out.push(<p key={out.length} className="[&:not(:first-child)]:mt-2">{inline(l)}</p>)
+    }
+  })
+  flush()
+  return <>{out}</>
+}
+
+function Reveal({ text, onTick, onDone }: { text: string; onTick: (shown: string) => void; onDone: () => void }) {
   const words = useMemo(() => text.split(/(\s+)/), [text])
   const [n, setN] = useState(0)
   useEffect(() => {
@@ -383,14 +429,15 @@ function Reveal({ text, onTick, onDone }: { text: string; onTick: () => void; on
       return
     }
     const t = window.setTimeout(() => {
-      setN((x) => Math.min(words.length, x + 2))
-      onTick()
+      const next = Math.min(words.length, n + 2)
+      setN(next)
+      onTick(words.slice(0, next).join(''))
     }, 22)
     return () => clearTimeout(t)
   }, [n, words.length])
   return (
     <>
-      {words.slice(0, n).join('')}
+      <Rich text={words.slice(0, n).join('')} />
       {n < words.length && <span className="aoi-caret" aria-hidden />}
     </>
   )
@@ -423,6 +470,7 @@ export default function App() {
   const fileRef = useRef<HTMLInputElement>(null)
   const mainRef = useRef<HTMLElement>(null)
   const [attached, setAttached] = useState<string[]>([])
+  const [previews, setPreviews] = useState<Record<string, string>>({})
   const [chats, setChats] = useState<Chat[]>(() => load('aoi.chats', SEED_CHATS))
   const [activeId, setActiveId] = useState(() => Date.now())
   const [search, setSearch] = useState('')
@@ -509,17 +557,17 @@ export default function App() {
       reply = { text: "I can't help with homework completion. I'm here for policy, research, and general learning questions." }
     } else if (route === 'policy') {
       reply = {
-        text: 'Freshmen applicants must submit a Form 138, a certificate of good moral character, a PSA birth certificate, and two 2×2 photos. Enrollment follows the registrar’s published schedule, and tuition is assessed per unit once your load is approved by the dean.',
+        text: '**Freshmen applicants** must submit the following:\n- Form 138 (report card)\n- Certificate of good moral character\n- PSA birth certificate\n- Two 2×2 photos\nEnrollment follows the **registrar’s published schedule**, and tuition is assessed per unit once your load is approved by the dean.',
         sources: ['Student Handbook p.12', 'Registrar Memo 2025-04'],
       }
     } else if (route === 'research') {
       reply = {
-        text: 'Here is a short synthesis from published literature: the programs differ mainly in eligibility criteria, award coverage, and renewal conditions. Studies on need-based aid in Philippine state universities report higher retention when stipends are paired with academic advising. Treat this as a starting point and verify against the original papers.',
+        text: 'Here is a **short synthesis** from published literature. The programs differ mainly in:\n- **Eligibility criteria**\n- **Award coverage**\n- **Renewal conditions**\nStudies on need-based aid in Philippine state universities report higher retention when stipends are paired with academic advising. Treat this as a starting point and verify against the original papers.',
         sources: ['Semantic Scholar', 'OpenAlex'],
       }
     } else {
       reply = {
-        text: 'Happy to help. Could you tell me a bit more about what you’re looking for? I can answer questions on university policies, find research on a topic, or point you to campus services.',
+        text: '**Happy to help.** Could you tell me a bit more about what you’re looking for? I can:\n- Answer questions on **university policies**\n- Find **research** on a topic\n- Point you to **campus services**',
       }
     }
     if (degraded) return { text: reply.text, warn: route !== 'homework' }
@@ -621,11 +669,15 @@ export default function App() {
       if (phase === 'responding' || phase === 'error') setRevealId(last.id)
     }
   }, [msgs])
-  const follow = () => {
+  const progressRef = useRef('')
+  const follow = (shown?: string) => {
+    if (shown !== undefined) progressRef.current = shown
     const t = mainRef.current
     if (t && t.scrollHeight - t.scrollTop - t.clientHeight < 160) endRef.current?.scrollIntoView({ block: 'end' })
   }
-  const swipe = useRef<{ x: number; y: number } | null>(null)
+  const swipe = useRef<{ x: number; y: number; mode: 'open' | 'close'; locked: boolean } | null>(null)
+  const [drag, setDrag] = useState<number | null>(null)
+  const asideRef = useRef<HTMLElement>(null)
   const { model, bgId } = settings
   const setModel = (m: string) => setSettings((x) => ({ ...x, model: m }))
   const setBgId = (b: string) => setSettings((x) => ({ ...x, bgId: b }))
@@ -678,6 +730,7 @@ export default function App() {
     timers.current = []
     setInput('')
     setAttached([])
+    setRevealId(null)
     setPhase('idle')
     setPending(null)
     setListening(false)
@@ -687,7 +740,14 @@ export default function App() {
   const stop = () => {
     timers.current.forEach(clearTimeout)
     timers.current = []
+    if (revealId !== null) {
+      const partial = progressRef.current.trimEnd()
+      const id = revealId
+      setMsgs((ms) => ms.map((m) => (m.id === id ? { ...m, text: partial ? `${partial}…` : 'Generation stopped.', sources: undefined, warn: false } : m)))
+      setRevealId(null)
+    }
     setPhase('idle')
+    showToast('Generation stopped')
   }
 
   const selectChat = (id: number) => {
@@ -704,6 +764,55 @@ export default function App() {
     if (id === activeId) newChat()
   }
 
+  const [toast, setToast] = useState('')
+  const [toastOn, setToastOn] = useState(false)
+  const toastTimer = useRef(0)
+  const showToast = (t: string) => {
+    setToast(t)
+    setToastOn(true)
+    clearTimeout(toastTimer.current)
+    toastTimer.current = window.setTimeout(() => setToastOn(false), 1800)
+  }
+  const [renamingId, setRenamingId] = useState<number | null>(null)
+  const [draft, setDraft] = useState('')
+  const renameRef = useRef<number | null>(null)
+  const startRename = (c: Chat) => {
+    renameRef.current = c.id
+    setRenamingId(c.id)
+    setDraft(c.title)
+  }
+  const commitRename = () => {
+    const id = renameRef.current
+    renameRef.current = null
+    const t = draft.trim()
+    if (id !== null && t) {
+      const old = chats.find((c) => c.id === id)?.title
+      if (t !== old) {
+        setChats((cs) => cs.map((c) => (c.id === id ? { ...c, title: t.slice(0, 60), renamed: true } : c)))
+        showToast('Chat renamed')
+      }
+    }
+    setRenamingId(null)
+  }
+  const cancelRename = () => {
+    renameRef.current = null
+    setRenamingId(null)
+  }
+  const togglePin = (id: number) => {
+    const was = chats.find((c) => c.id === id)?.pinned
+    setChats((cs) => cs.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c)))
+    showToast(was ? 'Unpinned' : 'Pinned to top')
+  }
+
+  const removeFile = (name: string) => {
+    setAttached((a) => a.filter((x) => x !== name))
+    setPreviews((p) => {
+      if (p[name]) URL.revokeObjectURL(p[name])
+      const { [name]: _gone, ...rest } = p
+      return rest
+    })
+  }
+
   const exportChat = () => {
     const title = chats.find((c) => c.id === activeId)?.title ?? 'AOI conversation'
     const body = msgs
@@ -715,6 +824,7 @@ export default function App() {
     a.download = `${title.replace(/[^\w-]+/g, '-').toLowerCase() || 'chat'}.txt`
     a.click()
     URL.revokeObjectURL(url)
+    showToast('Chat exported')
   }
 
   const clearAll = () => {
@@ -735,6 +845,7 @@ export default function App() {
   const copyMsg = (m: Msg) => {
     navigator.clipboard?.writeText(m.text).catch(() => {})
     setCopiedId(m.id)
+    showToast('Copied!')
     window.setTimeout(() => setCopiedId((c) => (c === m.id ? null : c)), 1500)
   }
 
@@ -746,8 +857,8 @@ export default function App() {
     const first = msgs.find((m) => m.role === 'user')?.text ?? 'New chat'
     const title = first.length > 34 ? first.slice(0, 34).trimEnd() + '…' : first
     setChats((cs) => {
-      const next = { id: activeId, title, msgs, updated: Date.now() }
       const i = cs.findIndex((c) => c.id === activeId)
+      const next: Chat = { ...(i >= 0 ? cs[i] : {}), id: activeId, title: i >= 0 && cs[i].renamed ? cs[i].title : title, msgs, updated: Date.now() }
       if (i < 0) return [next, ...cs]
       const copy = [...cs]
       copy[i] = next
@@ -816,29 +927,53 @@ export default function App() {
   return (
     <div
       className="relative mx-auto flex h-full w-full max-w-[430px] overflow-hidden pl-[var(--sa-left)] pr-[var(--sa-right)] md:max-w-none text-t-fg transition-[background] duration-300"
-      style={{ background: bg.css }}
-      onTouchStart={(e) => {
-        const t = e.touches[0]
-        swipe.current = { x: t.clientX, y: t.clientY }
+      style={{ background: bg.css, touchAction: 'pan-y' }}
+      onPointerDown={(e) => {
+        if (isDesktop || e.button > 0) return
+        const left = e.currentTarget.getBoundingClientRect().left
+        if (drawerOpen) swipe.current = { x: e.clientX, y: e.clientY, mode: 'close', locked: false }
+        else if (e.clientX - left < 32) swipe.current = { x: e.clientX, y: e.clientY, mode: 'open', locked: false }
       }}
-      onTouchEnd={(e) => {
-        const s0 = swipe.current
+      onPointerMove={(e) => {
+        const g = swipe.current
+        if (!g) return
+        const dx = e.clientX - g.x
+        const dy = e.clientY - g.y
+        if (!g.locked) {
+          if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) {
+            swipe.current = null
+            return
+          }
+          if (Math.abs(dx) < 8) return
+          g.locked = true
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId)
+          } catch {}
+        }
+        const w = asideRef.current?.offsetWidth ?? 300
+        setDrag(Math.max(0, Math.min(w, (g.mode === 'open' ? 0 : w) + dx)))
+      }}
+      onPointerUp={() => {
+        const g = swipe.current
         swipe.current = null
-        if (!s0 || isDesktop) return
-        const t = e.changedTouches[0]
-        const dx = t.clientX - s0.x
-        const dy = Math.abs(t.clientY - s0.y)
-        if (dy > 50 || Math.abs(dx) < 70) return
-        if (!drawerOpen && dx > 0 && s0.x < 40) setDrawerOpen(true)
-        else if (drawerOpen && dx < 0) setDrawerOpen(false)
+        if (g?.locked && drag !== null) setDrawerOpen(drag > (asideRef.current?.offsetWidth ?? 300) / 2)
+        setDrag(null)
+      }}
+      onPointerCancel={() => {
+        swipe.current = null
+        setDrag(null)
       }}
     >
+      <div aria-hidden className={`absolute inset-y-0 left-[var(--sa-left)] z-40 w-4 lg:hidden ${drawerOpen ? 'pointer-events-none' : ''}`} style={{ touchAction: 'none' }} />
       <div className={`absolute inset-0 z-50 lg:pointer-events-auto lg:relative lg:inset-auto lg:z-auto lg:w-[300px] lg:shrink-0 ${drawerOpen ? '' : 'pointer-events-none'}`} aria-hidden={!drawerOpen && !isDesktop}>
         <div
           onClick={() => setDrawerOpen(false)}
-          className={`absolute inset-0 bg-black/60 backdrop-blur-[2px] transition-opacity lg:hidden duration-300 ${drawerOpen ? 'opacity-100' : 'opacity-0'}`}
+          className={`absolute inset-0 bg-black/60 backdrop-blur-[2px] lg:hidden ${drag === null ? 'transition-opacity duration-300' : ''} ${drawerOpen ? 'opacity-100' : 'opacity-0'}`}
+          style={drag !== null ? { opacity: drag / (asideRef.current?.offsetWidth || 300) } : undefined}
         />
         <aside
+          ref={asideRef}
+          style={drag !== null ? { transform: `translateX(${drag - (asideRef.current?.offsetWidth ?? 300)}px)`, transition: 'none' } : undefined}
           inert={!drawerOpen && !isDesktop}
           aria-label="Navigation"
           className={`absolute inset-y-0 left-0 flex w-[84%] max-w-[320px] flex-col lg:w-full lg:max-w-none lg:translate-x-0 lg:shadow-none border-r border-t-surface bg-t-deep text-t-fg shadow-[8px_0_32px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}
@@ -909,12 +1044,15 @@ export default function App() {
             </label>
           </div>
 
-          <nav className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+          <nav className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-3 pb-3" style={{ touchAction: 'pan-y' }}>
             {(() => {
               const list = [...chats].filter((c) => c.title.toLowerCase().includes(search.toLowerCase())).sort((x, y) => y.updated - x.updated)
-              const today = list.filter((c) => Date.now() - c.updated < DAY)
-              const older = list.filter((c) => Date.now() - c.updated >= DAY)
+              const pinned = list.filter((c) => c.pinned)
+              const rest = list.filter((c) => !c.pinned)
+              const today = rest.filter((c) => Date.now() - c.updated < DAY)
+              const older = rest.filter((c) => Date.now() - c.updated >= DAY)
               const groups = [
+                { label: 'Pinned', items: pinned },
                 { label: 'Recent Chats', items: today },
                 { label: 'Previous 7 Days', items: older },
               ].filter((g) => g.items.length)
@@ -927,11 +1065,47 @@ export default function App() {
                       key={c.id}
                       className={`group flex items-center rounded-[10px] transition-colors duration-200 ease-in-out hover:bg-t-surface ${c.id === activeId ? 'bg-t-surface' : ''}`}
                     >
-                      <button type="button" onClick={() => selectChat(c.id)} className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left text-[14px]">
+                      {renamingId === c.id ? (
+                        <input
+                          autoFocus
+                          value={draft}
+                          maxLength={60}
+                          aria-label="Chat name"
+                          onChange={(e) => setDraft(e.target.value)}
+                          onBlur={commitRename}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitRename()
+                            if (e.key === 'Escape') {
+                              e.stopPropagation()
+                              cancelRename()
+                            }
+                          }}
+                          className="mx-2 my-1.5 h-8 min-w-0 flex-1 rounded-lg border border-[#800000] bg-t-input px-2.5 text-[14px] text-t-fg outline-none"
+                        />
+                      ) : (
+                      <button type="button" onClick={() => selectChat(c.id)} onDoubleClick={() => startRename(c)} className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left text-[14px]">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden>
                           <path d="M21 12a8 8 0 0 1-11.7 7.1L3 21l1.9-6.3A8 8 0 1 1 21 12z" />
                         </svg>
                         <span className="truncate">{c.title}</span>
+                        {c.pinned && <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--accent)" className="shrink-0" aria-label="Pinned"><path d="M12 2l2.4 6.9H22l-6 4.6 2.3 7.2L12 16.2 5.7 20.7 8 13.5 2 8.9h7.6z" /></svg>}
+                      </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={c.pinned ? `Unpin ${c.title}` : `Pin ${c.title}`}
+                        onClick={() => togglePin(c.id)}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-t-subtle opacity-0 transition-all duration-200 ease-in-out hover:bg-t-tint/10 hover:text-t-accent focus:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+                      >
+                        <svg {...ico} fill={c.pinned ? 'currentColor' : 'none'}><path d="M12 17v5M8 3h8l-1 6 3 4H6l3-4z" /></svg>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Rename ${c.title}`}
+                        onClick={() => startRename(c)}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-t-subtle opacity-0 transition-all duration-200 ease-in-out hover:bg-t-tint/10 hover:text-t-accent focus:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+                      >
+                        <svg {...ico}><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" /></svg>
                       </button>
                       <button
                         type="button"
@@ -1180,7 +1354,7 @@ export default function App() {
                     <div className="flex min-w-0 flex-col items-start gap-1">
                     <span className="px-1 text-[11px] font-semibold tracking-wide text-t-soft">AOI</span>
                     <div className="rounded-[20px] rounded-bl-[4px] border border-t-tint/10 bg-t-surface/80 px-4 py-3 leading-relaxed text-t-fg shadow-[0_6px_20px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-[10px]">
-                      {m.id === revealId ? <Reveal text={m.text} onTick={follow} onDone={() => setRevealId(null)} /> : m.text}
+                      {m.id === revealId ? <Reveal text={m.text} onTick={follow} onDone={() => setRevealId(null)} /> : <Rich text={m.text} />}
                     </div>
                     <div className={`flex items-center gap-0.5 ${m.id === revealId ? 'invisible' : 'aoi-fade-in'}`}>
                       {settings.showTime && <span className="px-1 text-[10px] font-medium uppercase tracking-[0.5px] text-t-subtle">{m.time}</span>}
@@ -1216,7 +1390,7 @@ export default function App() {
                   </div>
                 ),
               )}
-              {(phase === 'processing' || phase === 'responding') && (
+              {(phase === 'processing' || phase === 'responding') && msgs[msgs.length - 1]?.role === 'user' && (
                 <div className="aoi-in flex items-start gap-2.5" aria-label="AOI is thinking">
                   <div className="mt-0.5 shrink-0">
                     <Avatar state={avatarState} width={30} variant="face" />
@@ -1255,8 +1429,9 @@ export default function App() {
           <div className="mx-auto mb-2 flex max-w-[800px] flex-wrap gap-1.5">
             {attached.map((f) => (
               <span key={f} className="aoi-in flex items-center gap-1.5 rounded-full border border-t-tint/10 bg-t-surface/80 py-1 pl-3 pr-1.5 text-[12px] text-t-soft">
+                {previews[f] && <img src={previews[f]} alt="" className="-ml-1.5 h-6 w-6 rounded-full object-cover" />}
                 <span className="max-w-[180px] truncate">{f}</span>
-                <button type="button" aria-label={`Remove ${f}`} onClick={() => setAttached((a) => a.filter((x) => x !== f))} className="flex h-5 w-5 items-center justify-center rounded-full text-t-muted transition-colors duration-200 ease-in-out hover:bg-t-tint/10 hover:text-t-fg">
+                <button type="button" aria-label={`Remove ${f}`} onClick={() => removeFile(f)} className="flex h-5 w-5 items-center justify-center rounded-full text-t-muted transition-colors duration-200 ease-in-out hover:bg-t-tint/10 hover:text-t-fg">
                   <svg {...ico} width={12} height={12}><path d="M6 6l12 12M18 6 6 18" /></svg>
                 </button>
               </span>
@@ -1269,8 +1444,13 @@ export default function App() {
           multiple
           hidden
           onChange={(e) => {
-            const names = Array.from(e.target.files ?? []).map((f) => f.name)
-            setAttached((a) => [...a, ...names.filter((n) => !a.includes(n))].slice(0, 4))
+            const files = Array.from(e.target.files ?? [])
+            const fresh = files.filter((f) => !attached.includes(f.name)).slice(0, Math.max(0, 4 - attached.length))
+            if (files.length > fresh.length) showToast(attached.length + fresh.length >= 4 ? 'Up to 4 files per message' : 'File already attached')
+            if (fresh.length) {
+              setAttached((a) => [...a, ...fresh.map((f) => f.name)])
+              setPreviews((p) => ({ ...p, ...Object.fromEntries(fresh.filter((f) => f.type.startsWith('image/')).map((f) => [f.name, URL.createObjectURL(f)])) }))
+            }
             e.target.value = ''
           }}
         />
@@ -1325,7 +1505,7 @@ export default function App() {
               <path d="M12 18v4" />
             </svg>
           </button>
-          {busy ? (
+          {busy || revealId !== null ? (
             <button
               type="button"
               aria-label="Stop generating"
@@ -1425,6 +1605,15 @@ export default function App() {
             </label>
           )}
         </div>
+      </div>
+
+      <div
+        role="status"
+        aria-live="polite"
+        className={`pointer-events-none fixed left-1/2 z-[80] -translate-x-1/2 rounded-full bg-[#0A0A0A] px-4 py-2 text-[13px] font-medium text-white shadow-[0_8px_24px_rgba(0,0,0,0.35)] ring-1 ring-white/15 transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${toastOn ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'}`}
+        style={{ bottom: 'calc(96px + var(--sa-bottom))' }}
+      >
+        {toast}
       </div>
 
       {settingsOpen && (
