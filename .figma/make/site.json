@@ -1,0 +1,10 @@
+{
+  "description": "An AI assistant for MSU-Zamboanga Sibugay University that provides quick answers about campus policies, research, and student life through a mobile-friendly chat interface.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
