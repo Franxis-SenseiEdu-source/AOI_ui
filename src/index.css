@@ -198,9 +198,19 @@ body,
 .aoi-glow { animation: aoi-glow 1.8s ease-in-out infinite; }
 .aoi-char { transform-origin: 50% 100%; animation: aoi-breathe 3s ease-in-out infinite; }
 .aoi-press { animation: aoi-press 0.3s ease-out; }
+@keyframes aoi-twinkle {
+  0%, 100% { transform: scale(0.6) rotate(0deg); opacity: 0.4; }
+  50% { transform: scale(1.1) rotate(20deg); opacity: 1; }
+}
+@keyframes aoi-drip {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(10px); }
+}
+.aoi-twinkle { animation: aoi-twinkle 1.4s ease-in-out infinite; }
+.aoi-drip { animation: aoi-drip 1.6s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
-  .aoi-breathe, .aoi-pulse, .aoi-dot, .aoi-talk, .aoi-blink, .aoi-wave, .aoi-spin, .aoi-glow, .aoi-char, .aoi-shimmer { animation: none; }
+  .aoi-breathe, .aoi-pulse, .aoi-dot, .aoi-talk, .aoi-blink, .aoi-wave, .aoi-spin, .aoi-glow, .aoi-char, .aoi-shimmer, .aoi-twinkle, .aoi-drip { animation: none; }
 }
 
 .aoi-caret {

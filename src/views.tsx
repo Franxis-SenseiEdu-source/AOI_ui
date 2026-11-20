@@ -4,8 +4,8 @@ import msuLogo from './msu-logo.png'
 import portalBg from './portal-bg.mp4'
 
 export type Role = 'Student' | 'Faculty' | 'Staff' | 'Admin'
-export type View = 'login' | 'account' | 'about' | 'research' | 'portal' | 'chat' | 'audit' | 'policies'
-export type AuditRow = { cid: string; ts: number; role: Role; intent: string; model: string; path: string; external: boolean; degraded: boolean; user?: string }
+export type View = 'login' | 'account' | 'about' | 'research' | 'portal' | 'chat' | 'audit' | 'aoi'
+export type AuditRow = { cid: string; ts: number; role: Role; intent: string; model: string; path: string; external: boolean; wait?: number; user?: string }
 
 export const ROLES: { value: Role; desc: string }[] = [
   { value: 'Student', desc: 'Chat and research · own activity log' },
@@ -35,31 +35,30 @@ export const fmtTs = (t: number) => {
 const MIN = 60_000
 export const HISTORY = (now: number): AuditRow[] => {
   const D = 86_400_000
-  const r = (cid: string, ago: number, role: Role, intent: string, model: string, path: string, external = false, degraded = false): AuditRow => ({ cid, ts: now - ago, role, intent, model, path, external, degraded })
+  const r = (cid: string, ago: number, role: Role, intent: string, model: string, path: string, external = false, wait = 0): AuditRow => ({ cid, ts: now - ago, role, intent, model, path, external, wait })
   return [
     r('aoi-7x9f2', 2 * D, 'Student', 'Policy', 'AOI Policy', 'Local RAG'),
     r('aoi-m3k8q', 3 * D, 'Student', 'Research', 'External LLM (anonymized)', 'PII Stripper → External', true),
-    r('aoi-b4n6w', 41 * MIN, 'Faculty', 'Policy', 'AOI Policy', 'Local RAG'),
+    r('aoi-b4n6w', 41 * MIN, 'Faculty', 'Policy', 'AOI Policy', 'Local RAG', false, 6200),
     r('aoi-t8c2d', 58 * MIN, 'Student', 'General', 'AOI General', 'Local LLM'),
     r('aoi-h5r9e', 95 * MIN, 'Staff', 'Policy', 'AOI Policy', 'Local RAG'),
     r('aoi-k2v7s', 2.4 * 60 * MIN, 'Student', 'Homework (refused)', 'None (rule-based)', 'Policy Guard → Refused'),
     r('aoi-p9x3f', 3.1 * 60 * MIN, 'Faculty', 'Research', 'External LLM (anonymized)', 'PII Stripper → External', true),
-    r('aoi-w6j4n', 5 * 60 * MIN, 'Student', 'General', 'AOI Local Fallback', 'Local fallback', false, true),
-    r('aoi-d3q8m', 7 * 60 * MIN, 'Student', 'Policy', 'AOI Local Fallback', 'Local fallback', false, true),
+    r('aoi-w6j4n', 5 * 60 * MIN, 'Student', 'General', 'AOI General', 'Local LLM', false, 11800),
+    r('aoi-d3q8m', 7 * 60 * MIN, 'Student', 'Policy', 'AOI Policy', 'Local RAG', false, 4300),
     r('aoi-z7e5y', 9 * 60 * MIN, 'Staff', 'Research', 'External LLM (anonymized)', 'PII Stripper → External', true),
     r('aoi-g4s2c', 1 * D + 3 * 60 * MIN, 'Student', 'General', 'AOI General', 'Local LLM'),
     r('aoi-n8u6a', 1 * D + 6 * 60 * MIN, 'Faculty', 'Policy', 'AOI Policy', 'Local RAG'),
   ]
 }
 
-export type SourceDoc = { title: string; external: boolean; ref: string; snippet: string; docId?: string; score: number; chunk: string }
+export type SourceDoc = { title: string; external: boolean; ref: string; snippet: string; score: number; chunk: string }
 
 export const SOURCE_DOCS: Record<string, SourceDoc> = {
   'Student Handbook p.12': {
     title: 'Student Handbook 2025–2026',
     external: false,
     ref: 'Admission & Enrollment · p.12',
-    docId: 'handbook',
     score: 0.94,
     chunk: 'handbook#c12-3',
     snippet:
@@ -69,7 +68,6 @@ export const SOURCE_DOCS: Record<string, SourceDoc> = {
     title: 'Registrar Memo 2025-04 · Enrollment Schedule',
     external: false,
     ref: 'Office of the Registrar · p.1',
-    docId: 'memo',
     score: 0.88,
     chunk: 'memo-2025-04#c1-1',
     snippet:
@@ -94,81 +92,6 @@ export const SOURCE_DOCS: Record<string, SourceDoc> = {
       'Programs differ chiefly in eligibility thresholds, the share of tuition covered, and the GPA conditions required for renewal. Renewal rules were the strongest predictor of scholar attrition.',
   },
 }
-
-export type PolicyDoc = { id: string; title: string; office: string; category: string; pages: number; updated: string; size: string; body: { n: number; paras: string[] }[] }
-
-export const DOCS: PolicyDoc[] = [
-  {
-    id: 'handbook',
-    title: 'Student Handbook 2025–2026',
-    office: 'Office of Student Affairs',
-    category: 'Student Life',
-    pages: 84,
-    updated: 'Jun 2025',
-    size: '3.2 MB',
-    body: [
-      {
-        n: 12,
-        paras: [
-          'Admission and Enrollment. All applicants are admitted subject to verification of credentials by the Office of the Registrar.',
-          SOURCE_DOCS['Student Handbook p.12'].snippet,
-          'Transferees must additionally present an Honorable Dismissal and a Transcript of Records for evaluation and crediting of units.',
-        ],
-      },
-      { n: 13, paras: ['Students are expected to settle assessed fees before the end of the first week of classes. Installment plans are available through the Accounting Office.'] },
-    ],
-  },
-  {
-    id: 'memo',
-    title: 'Registrar Memo 2025-04 · Enrollment Schedule',
-    office: 'Office of the Registrar',
-    category: 'Enrollment',
-    pages: 3,
-    updated: 'Apr 2025',
-    size: '410 KB',
-    body: [{ n: 1, paras: ['To: All Deans, Department Chairs and Students.', SOURCE_DOCS['Registrar Memo 2025-04'].snippet, 'Late enrollment is allowed until the end of the add/drop period upon payment of the prescribed surcharge.'] }],
-  },
-  {
-    id: 'tuition',
-    title: 'Tuition & Fees Schedule AY 2025–2026',
-    office: 'Accounting Office',
-    category: 'Finance',
-    pages: 6,
-    updated: 'May 2025',
-    size: '620 KB',
-    body: [{ n: 1, paras: ['Tuition for state-funded undergraduate programs is free under RA 10931 for qualified students. Miscellaneous and laboratory fees remain payable per unit schedule.', 'Students who are not covered by free tuition are assessed per unit, with a 5% discount for full payment on or before the first day of classes.'] }],
-  },
-  {
-    id: 'grading',
-    title: 'Grading System & Grade Appeals Policy',
-    office: 'Office of the VP for Academic Affairs',
-    category: 'Academics',
-    pages: 11,
-    updated: 'Aug 2024',
-    size: '880 KB',
-    body: [{ n: 5, paras: ['A student who disputes a final grade shall first raise the concern with the instructor within ten (10) working days after grades are released.', 'If unresolved, the student may file a written appeal with the Department Chair, then the College Dean, whose decision is final.'] }],
-  },
-  {
-    id: 'scholarship',
-    title: 'Scholarship & Financial Assistance Guidelines',
-    office: 'Scholarship Office',
-    category: 'Finance',
-    pages: 14,
-    updated: 'Jul 2025',
-    size: '1.1 MB',
-    body: [{ n: 3, paras: ['Eligibility. Applicants must maintain a general weighted average of 2.0 or better with no failing or incomplete grades in the preceding term.', 'Renewal is evaluated each semester. Scholars who fall below the retention GPA are placed on probation for one term.'] }],
-  },
-  {
-    id: 'privacy',
-    title: 'Data Privacy Manual (RA 10173)',
-    office: 'Data Protection Office',
-    category: 'Compliance',
-    pages: 22,
-    updated: 'Jan 2025',
-    size: '1.8 MB',
-    body: [{ n: 8, paras: ['Personal data may not leave the University’s systems unless identifying information has been removed and the data subject has given informed consent.', 'All processing of personal data is logged with a correlation identifier to support audit and breach investigation.'] }],
-  },
-]
 
 export const ANNOUNCEMENTS = [
   { tag: 'Registrar', date: 'Oct 16', title: 'Midterm grade submission extended to Oct 25', body: 'Faculty may now encode midterm grades through the portal until October 25, 5:00 PM.' },
@@ -214,16 +137,34 @@ export function Login({ onLogin }: { onLogin: (email: string, id: string) => voi
   const [idn, setIdn] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const fails = useRef(0)
+  const [lockedUntil, setLockedUntil] = useState(0)
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (busy) return
+    const now = Date.now()
+    if (lockedUntil > now) {
+      setErr(`Too many attempts. Try again in ${Math.ceil((lockedUntil - now) / 1000)}s.`)
+      return
+    }
+    const fail = (msg: string) => {
+      fails.current += 1
+      if (fails.current >= 5) {
+        fails.current = 0
+        setLockedUntil(now + 30_000)
+        setErr('Too many attempts. Try again in 30s.')
+      } else setErr(msg)
+    }
     if (!email.trim() || !idn.trim()) {
       setErr('Please enter your credentials.')
       return
     }
+    if (!EMAIL_RE.test(email.trim())) return fail(`Use your institutional @${INSTITUTION_DOMAIN} email.`)
+    if (!ID_RE.test(idn.trim())) return fail('Enter a valid ID number (e.g. 2024-00123).')
+    fails.current = 0
     setErr('')
     setBusy(true)
-    window.setTimeout(() => onLogin(email, idn), 1400)
+    window.setTimeout(() => onLogin(email.trim(), idn.trim()), 1400)
   }
   const field = 'mt-1.5 w-full rounded-xl border bg-white/[0.06] px-4 py-3 text-[15px] text-white placeholder:text-white/35 outline-none transition-colors duration-200 focus:border-[#E5707E] focus:bg-white/[0.09]'
   const pts = [
@@ -282,6 +223,8 @@ export function Login({ onLogin }: { onLogin: (email: string, id: string) => voi
           <input
             type="email"
             autoComplete="username"
+            maxLength={254}
+            spellCheck={false}
             value={email}
             disabled={busy}
             onChange={(e) => { setEmail(e.target.value); setErr('') }}
@@ -298,10 +241,11 @@ export function Login({ onLogin }: { onLogin: (email: string, id: string) => voi
             type="text"
             inputMode="numeric"
             autoComplete="off"
+            maxLength={20}
             value={idn}
             disabled={busy}
             onChange={(e) => { setIdn(e.target.value); setErr('') }}
-            placeholder="100XXXX"
+            placeholder="2024-00123"
             className={`${field} pl-10 font-mono ${err && !idn.trim() ? 'border-red-400/80' : 'border-white/15'}`}
           />
           </span>
@@ -327,9 +271,9 @@ export function Login({ onLogin }: { onLogin: (email: string, id: string) => voi
             'Verify & Login'
           )}
         </button>
-        <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[11.5px] text-white/45">
-          <svg {...ico} width={12} height={12}><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
-          Your role is assigned automatically from your institutional account.
+        <p className="mt-4 flex items-start justify-center gap-1.5 text-[11.5px] leading-snug text-white/45">
+          <svg {...ico} width={12} height={12} className="mt-[2px] shrink-0"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+          <span>Your role is assigned automatically from your institutional account.</span>
         </p>
       </form>
       </div>
@@ -364,7 +308,7 @@ export function Portal({
   name: string
   onAsk: (text: string) => void
   avatar: React.ReactNode
-  counts: { chats: number; queries: number; docs: number }
+  counts: { chats: number; queries: number; local: number }
   onOpen: (v: View) => void
   onSignOut: () => void
 }) {
@@ -378,7 +322,7 @@ export function Portal({
   const stats = [
     { label: 'Saved chats', value: counts.chats, view: 'chat' as View },
     { label: role === 'Admin' ? 'Logged queries' : 'Your queries', value: counts.queries, view: 'audit' as View },
-    { label: 'Policy documents', value: counts.docs, view: 'policies' as View },
+    { label: 'Answered on campus', value: `${counts.local}%`, view: 'audit' as View },
   ]
   const tags = ['All', ...Array.from(new Set(ANNOUNCEMENTS.map((a) => a.tag)))]
   const cards: { view: View; title: string; desc: string; meta: string; icon: React.ReactNode; primary?: boolean }[] = [
@@ -448,6 +392,7 @@ export function Portal({
               >
                 <input
                   value={ask}
+                  maxLength={500}
                   onChange={(e) => { setAsk(e.target.value); setAskErr(false) }}
                   placeholder={askErr ? 'Type a question first…' : 'Ask AOI anything about campus…'}
                   aria-label="Ask AOI"
@@ -558,16 +503,20 @@ export function Portal({
   )
 }
 
+const QueueTag = ({ wait }: { wait?: number }) =>
+  wait && wait > 0 ? <span title="Waited in the local GPU queue" className="ml-1.5 inline-block rounded border border-t-line2 px-1 py-px align-middle font-mono text-[10px] text-t-muted">queued {(wait / 1000).toFixed(1)}s</span> : null
+
 const Yes = () => <span className="inline-flex items-center gap-1.5 rounded-full bg-[#800000] px-2 py-0.5 text-[11px] font-bold text-white"><span className="h-1.5 w-1.5 rounded-full bg-white" />Yes</span>
 const No = () => <span className="inline-flex items-center rounded-full bg-t-tint/10 px-2 py-0.5 text-[11px] font-semibold text-t-muted">No</span>
 
 export function AuditLog({ rows, onHome, focusCid, admin }: { rows: AuditRow[]; onHome: () => void; focusCid: string | null; admin: boolean }) {
-  const [filter, setFilter] = useState<'all' | 'external' | 'degraded'>('all')
+  const [filter, setFilter] = useState<'all' | 'external' | 'queued'>('all')
   const [q, setQ] = useState('')
   const total = rows.length
   const ext = rows.filter((r) => r.external).length
-  const deg = rows.filter((r) => r.degraded).length
-  const list = rows.filter((r) => (filter === 'all' || (filter === 'external' ? r.external : r.degraded)) && (!q || r.cid.includes(q.toLowerCase().trim())))
+  const queued = rows.filter((r) => (r.wait ?? 0) > 0)
+  const avgWait = queued.length ? queued.reduce((t, r) => t + (r.wait ?? 0), 0) / queued.length / 1000 : 0
+  const list = rows.filter((r) => (filter === 'all' || (filter === 'external' ? r.external : (r.wait ?? 0) > 0)) && (!q || r.cid.includes(q.toLowerCase().trim())))
   const focusRef = useRef<HTMLElement | null>(null)
   const refFor = (cid: string) => (el: HTMLElement | null) => {
     if (el && cid === focusCid && focusRef.current !== el) {
@@ -592,11 +541,11 @@ export function AuditLog({ rows, onHome, focusCid, admin }: { rows: AuditRow[]; 
             <span aria-hidden className="text-t-subtle">|</span>
             <span className="text-t-accent">External Calls: <b className="font-mono text-[15px]">{ext}</b></span>
             <span aria-hidden className="text-t-subtle">|</span>
-            <span className="text-t-warn">Degraded Events: <b className="font-mono text-[15px]">{deg}</b></span>
+            <span>Queued for GPU: <b className="font-mono text-[15px]">{queued.length}</b>{queued.length > 0 && <span className="ml-1 font-normal text-t-muted">· avg {avgWait.toFixed(1)}s</span>}</span>
           </p>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            {(['all', 'external', 'degraded'] as const).map((f) => (
+            {(['all', 'external', 'queued'] as const).map((f) => (
               <button
                 key={f}
                 type="button"
@@ -604,7 +553,7 @@ export function AuditLog({ rows, onHome, focusCid, admin }: { rows: AuditRow[]; 
                 onClick={() => setFilter(f)}
                 className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold capitalize transition-all duration-200 ${filter === f ? 'border-[#800000] bg-[#800000] text-white' : 'border-t-line2 bg-t-line text-t-soft hover:brightness-95'}`}
               >
-                {f === 'all' ? 'All' : f === 'external' ? 'External only' : 'Degraded only'}
+                {f === 'all' ? 'All' : f === 'external' ? 'External only' : 'Queued only'}
               </button>
             ))}
             <label className="ml-auto flex h-9 min-w-[160px] flex-1 items-center gap-2 rounded-full border border-t-line bg-t-input px-3 focus-within:border-[#800000] md:max-w-[240px] md:flex-none">
@@ -636,8 +585,8 @@ export function AuditLog({ rows, onHome, focusCid, admin }: { rows: AuditRow[]; 
                       <td className="px-4 py-3 font-medium">{r.intent}</td>
                       <td className="px-4 py-3 text-t-soft">{r.model}</td>
                       <td className="px-4 py-3 text-t-soft">
-                        {r.degraded && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-t-warn align-middle" title="Degraded" />}
                         {r.path}
+                        <QueueTag wait={r.wait} />
                       </td>
                       <td className="px-4 py-3">{r.external ? <Yes /> : <No />}</td>
                     </tr>
@@ -659,7 +608,7 @@ export function AuditLog({ rows, onHome, focusCid, admin }: { rows: AuditRow[]; 
                   <dt className="text-t-muted">Role</dt><dd>{r.role}</dd>
                   <dt className="text-t-muted">Intent</dt><dd className="font-medium">{r.intent}</dd>
                   <dt className="text-t-muted">Model</dt><dd>{r.model}</dd>
-                  <dt className="text-t-muted">Path</dt><dd>{r.degraded && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-t-warn align-middle" />}{r.path}</dd>
+                  <dt className="text-t-muted">Path</dt><dd>{r.path}<QueueTag wait={r.wait} /></dd>
                 </dl>
               </li>
             ))}
@@ -674,84 +623,7 @@ export function AuditLog({ rows, onHome, focusCid, admin }: { rows: AuditRow[]; 
   )
 }
 
-const PdfIcon = () => (
-  <svg {...ico} width={22} height={22}>
-    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-    <path d="M14 3v5h5" />
-    <path d="M9 13h6M9 17h4" />
-  </svg>
-)
-
-export function PolicyLibrary({ openId, setOpenId, highlight, onHome, onToast }: { openId: string | null; setOpenId: (id: string | null) => void; highlight: string | null; onHome: () => void; onToast: (t: string) => void }) {
-  const [q, setQ] = useState('')
-  const [cat, setCat] = useState('All')
-  const cats = ['All', ...Array.from(new Set(DOCS.map((d) => d.category)))]
-  const doc = DOCS.find((d) => d.id === openId)
-  const list = DOCS.filter((d) => (cat === 'All' || d.category === cat) && d.title.toLowerCase().includes(q.toLowerCase()))
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-t-line bg-t-surface px-3 pb-2 pt-[calc(0.5rem+var(--sa-top))] shadow-[0_4px_20px_rgba(0,0,0,0.3)] md:px-6">
-        <BackBtn onClick={doc ? () => setOpenId(null) : onHome} label={doc ? 'Back to library' : 'Back to Portal'} />
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[16px] font-bold leading-tight">{doc ? doc.title : 'University Policies'}</h1>
-          <p className="truncate text-[11px] text-t-muted">{doc ? `${doc.office} · ${doc.pages} pages · ${doc.size}` : 'Official documents indexed for AOI answers'}</p>
-        </div>
-        {doc && (
-          <button type="button" onClick={() => onToast('Download started (mock)')} className="flex h-9 items-center gap-1.5 rounded-full border border-t-line2 bg-t-line px-3 text-[12px] font-semibold transition-all hover:brightness-95 active:scale-95">
-            <svg {...ico} width={14} height={14}><path d="M12 4v11M7 11l5 5 5-5M5 20h14" /></svg>
-            PDF
-          </button>
-        )}
-      </header>
-      <main className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 pb-[calc(2rem+var(--sa-bottom))] pt-5 md:px-8 md:pt-8">
-        {doc ? (
-          <div key={doc.id} className="aoi-fade-in mx-auto flex w-full max-w-[720px] flex-col gap-4">
-            {doc.body.map((pg) => (
-              <article key={pg.n} className="rounded-xl bg-white p-6 text-[13.5px] leading-relaxed text-neutral-800 shadow-[0_10px_30px_rgba(0,0,0,0.35)] md:p-10 md:text-[14.5px]">
-                <p className="mb-3 border-b border-neutral-200 pb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-neutral-500">{doc.title} · Page {pg.n}</p>
-                {pg.paras.map((p) => (
-                  <p key={p} className={`mt-3 ${p === highlight ? '-mx-2 rounded-md bg-[#800000]/12 px-2 py-1 shadow-[inset_3px_0_0_#800000]' : ''}`}>{p}</p>
-                ))}
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="mx-auto w-full max-w-[1040px]">
-            <div className="flex flex-wrap items-center gap-2">
-              {cats.map((c) => (
-                <button key={c} type="button" aria-pressed={cat === c} onClick={() => setCat(c)} className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-all ${cat === c ? 'border-[#800000] bg-[#800000] text-white' : 'border-t-line2 bg-t-line text-t-soft hover:brightness-95'}`}>
-                  {c}
-                </button>
-              ))}
-              <label className="ml-auto flex h-9 min-w-[160px] flex-1 items-center gap-2 rounded-full border border-t-line bg-t-input px-3 focus-within:border-[#800000] md:max-w-[260px] md:flex-none">
-                <svg {...ico} width={14} height={14}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search documents" aria-label="Search documents" className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-t-subtle" />
-              </label>
-            </div>
-            <ul className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {list.map((d, i) => (
-                <li key={d.id} style={{ animationDelay: `${i * 0.05}s` }} className="aoi-in">
-                  <button type="button" onClick={() => setOpenId(d.id)} className="group flex h-full w-full items-start gap-3 rounded-2xl border border-t-tint/10 bg-t-surface/70 p-4 text-left backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:border-[#800000] active:scale-[0.98]">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#800000]/30 text-t-accent group-hover:bg-[#800000]/60 group-hover:text-t-fg"><PdfIcon /></span>
-                    <span className="min-w-0">
-                      <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-t-accent">{d.category}</span>
-                      <span className="mt-0.5 block text-[14px] font-semibold leading-snug">{d.title}</span>
-                      <span className="mt-1 block text-[12px] text-t-muted">{d.office}</span>
-                      <span className="mt-2 block font-mono text-[11px] text-t-subtle">PDF · {d.pages} pp · {d.size} · {d.updated}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {!list.length && <p className="py-10 text-center text-[13px] text-t-subtle">No documents match.</p>}
-          </div>
-        )}
-      </main>
-    </div>
-  )
-}
-
-export function SourceSheet({ label, onClose, onView }: { label: string | null; onClose: () => void; onView: (label: string) => void }) {
+export function SourceSheet({ label, onClose, onAsk }: { label: string | null; onClose: () => void; onAsk: (label: string) => void }) {
   const last = useRef<string | null>(null)
   if (label) last.current = label
   const shown = label ?? last.current
@@ -787,12 +659,12 @@ export function SourceSheet({ label, onClose, onView }: { label: string | null; 
             </div>
             <button
               type="button"
-              onClick={() => onView(shown)}
+              onClick={() => onAsk(shown)}
               className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-[12px] font-semibold text-white shadow-[0_0_15px_rgba(128,0,0,0.4)] transition-all duration-200 hover:brightness-125 active:scale-[0.98]"
               style={{ background: 'linear-gradient(135deg, #800000, #600000)' }}
             >
-              <PdfIcon />
-              View Full Document
+              <svg {...ico} width={18} height={18} aria-hidden><path d="M21 12a8 8 0 0 1-11.7 7.1L3 21l1.9-6.3A8 8 0 1 1 21 12z" /><path d="M8 11h8M8 14.5h5" /></svg>
+              Ask AOI about this
             </button>
           </>
         )}
@@ -801,29 +673,35 @@ export function SourceSheet({ label, onClose, onView }: { label: string | null; 
   )
 }
 
-export function synthRow(cid: string, ts: number, role: Role, m: { text: string; external?: boolean; sources?: string[]; warn?: boolean }): AuditRow {
+export function synthRow(cid: string, ts: number, role: Role, m: { text: string; external?: boolean; sources?: string[] }): AuditRow {
   const homework = m.text.startsWith("I can't help with homework")
   const error = m.text.startsWith('Sorry, something went wrong')
   const intent = homework ? 'Homework (refused)' : error ? 'Error' : m.external ? 'Research' : m.sources ? 'Policy' : 'General'
-  if (m.warn) return { cid, ts, role, intent, model: 'AOI Local Fallback', path: 'Local fallback', external: false, degraded: true }
-  if (homework) return { cid, ts, role, intent, model: 'None (rule-based)', path: 'Policy Guard → Refused', external: false, degraded: false }
-  if (error) return { cid, ts, role, intent, model: 'None', path: 'Error handler', external: false, degraded: false }
-  if (m.external) return { cid, ts, role, intent, model: 'External LLM (anonymized)', path: 'PII Stripper → External', external: true, degraded: false }
-  return { cid, ts, role, intent, model: m.sources ? 'AOI Policy' : 'AOI General', path: m.sources ? 'Local RAG' : 'Local LLM', external: false, degraded: false }
+  if (homework) return { cid, ts, role, intent, model: 'None (rule-based)', path: 'Policy Guard → Refused', external: false }
+  if (error) return { cid, ts, role, intent, model: 'None', path: 'Error handler', external: false }
+  if (m.external) return { cid, ts, role, intent, model: 'External LLM (anonymized)', path: 'PII Stripper → External', external: true }
+  return { cid, ts, role, intent, model: m.sources ? 'AOI Policy' : 'AOI General', path: m.sources ? 'Local RAG' : 'Local LLM', external: false }
 }
 
 export type User = { name: string; email: string; id: string; role: Role }
+export const INSTITUTION_DOMAIN = 'msuzs.edu.ph'
+export const EMAIL_RE = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?@msuzs\.edu\.ph$/i
+export const ID_RE = /^(?:[a-z]{1,3}-?)?\d[\d-]{3,14}$/i
+// Role comes from whole tokens of the email local part (not substrings), so "notadmin@..." stays a Student.
 export const roleFor = (email: string, id: string): Role => {
-  const e = email.toLowerCase(), i = id.toUpperCase()
-  if (/^adm/.test(i) || /admin/.test(e)) return 'Admin'
-  if (/^stf|^s-/.test(i) || /(staff|registrar|office|ict)/.test(e)) return 'Staff'
-  if (/^fac|^f-/.test(i) || /(prof|faculty|instructor|dr\.)/.test(e)) return 'Faculty'
+  const e = email.trim().toLowerCase(), i = id.trim().toUpperCase()
+  if (!EMAIL_RE.test(e)) return 'Student'
+  const tokens = e.split('@')[0].split(/[._-]+/)
+  const has = (...w: string[]) => tokens.some((t) => w.includes(t))
+  if (/^ADM-?\d/.test(i) || has('admin')) return 'Admin'
+  if (/^(STF|S)-?\d/.test(i) || has('staff', 'registrar', 'office', 'ict')) return 'Staff'
+  if (/^(FAC|F)-?\d/.test(i) || has('prof', 'faculty', 'instructor', 'dr')) return 'Faculty'
   return 'Student'
 }
 export const userFrom = (email: string, id: string): User => {
-  const local = email.split('@')[0] || 'student'
-  const name = local.split(/[._-]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ') || 'Student'
-  return { name, email: email.trim(), id: id.trim(), role: roleFor(email, id) }
+  const local = email.trim().split('@')[0] || 'student'
+  const name = local.split(/[._-]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(' ').slice(0, 60) || 'Student'
+  return { name, email: email.trim().toLowerCase(), id: id.trim().toUpperCase(), role: roleFor(email, id) }
 }
 export const initials = (n: string) => n.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || 'ST'
 
@@ -915,7 +793,7 @@ export function AccountSettings({
 const TIERS: { tier: string; name: string; sub: string; model: string; where: 'local' | 'external'; rule: string; out: string; bar: string }[] = [
   { tier: 'Tier 1', name: 'Lightweight STEM', sub: 'research-stem-light', model: 'aoi-scholarmini', where: 'local', rule: 'Query under 150 tokens and no synthesis keywords', out: 'Simple local result', bar: 'bg-emerald-500' },
   { tier: 'Tier 2', name: 'Deep Local', sub: 'research-stem-deep', model: 'aoi-scholar', where: 'local', rule: '150 tokens or more, or synthesis keywords (compare, analyze, evaluate, synthesize, critique)', out: 'Complex synthesized local result', bar: 'bg-sky-500' },
-  { tier: 'Tier 3', name: 'External Synthesis', sub: 'research-general', model: 'OpenRouter free tier', where: 'external', rule: 'Needs multi-source integration, or degraded-mode fallback', out: 'External multi-source integrated result', bar: 'bg-rose-500' },
+  { tier: 'Tier 3', name: 'External Synthesis', sub: 'research-general', model: 'OpenRouter free tier', where: 'external', rule: 'Needs multi-source integration beyond the local index', out: 'External multi-source integrated result', bar: 'bg-rose-500' },
 ]
 
 const SubHeader = ({ title, sub, onHome }: { title: string; sub: string; onHome: () => void }) => (
@@ -934,7 +812,7 @@ export function AboutAOI({ onHome }: { onHome: () => void }) {
     { n: 'Policy', d: 'Answers from the University’s own documents using local retrieval, with source citations.' },
     { n: 'Research', d: 'Routes through the research tier ladder, local first, external only with consent.' },
     { n: 'General', d: 'Everyday campus questions answered by a local model.' },
-    { n: 'Degraded mode', d: 'If a local model is unavailable, AOI says so clearly and falls back safely.' },
+    { n: 'GPU queue', d: 'The campus GPU answers one request at a time. Students and faculty are served first come, first served, and you see your place in line.' },
   ]
   const pillars = [
     ['Data sovereignty', 'Queries stay on university systems unless you approve an anonymized external lookup.'],
@@ -1043,8 +921,8 @@ export function ResearchHub({ onHome, onStart, prompts }: { onHome: () => void; 
           </div>
 
           <p className="mt-3 flex items-start gap-2 rounded-lg border border-dashed border-t-line2 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-t-muted">
-            <svg {...ico} width={14} height={14} className="mt-0.5 shrink-0"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01" /></svg>
-            <span><b className="text-t-fg">Degraded mode:</b> if a local model is unavailable, the request also falls through to the gate and Tier 3. Every external call is flagged in the audit log.</span>
+            <svg {...ico} width={14} height={14} className="mt-0.5 shrink-0"><rect x="3" y="7" width="18" height="10" rx="2" /><path d="M7 11h2M7 13h2M13 10v4M16 10v4" /></svg>
+            <span><b className="text-t-fg">Shared GPU:</b> Tiers 1 and 2 run on a single campus GPU that serves one request at a time, in arrival order. Tier 3 runs externally and skips the queue. Every external call is flagged in the audit log.</span>
           </p>
 
           <h3 className="mt-9 border-b-2 border-[#800000] pb-2 text-[17px] font-extrabold">Start a research chat</h3>
@@ -1058,6 +936,489 @@ export function ResearchHub({ onHome, onStart, prompts }: { onHome: () => void; 
                 <svg {...ico} width={16} height={16} className="shrink-0 text-t-subtle transition-transform group-hover:translate-x-1 group-hover:text-t-accent"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
               </button>
             ))}
+          </div>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+// ---- AOI character profile (gacha-style card, academic edition) ----------------------
+const AOI_STATS: { key: string; name: string; value: number; note: string }[] = [
+  { key: 'CIT', name: 'Citation Accuracy', value: 98, note: 'Every policy answer ships with page numbers.' },
+  { key: 'PRV', name: 'Privacy Armor', value: 99, note: 'Strips personal data before any external lookup.' },
+  { key: 'INT', name: 'Policy Recall', value: 96, note: 'Has read the whole Student Handbook. Twice.' },
+  { key: 'EVA', name: 'Homework Evasion', value: 100, note: 'Will not write your essay. Will help you outline it.' },
+  { key: 'RES', name: 'Research Depth', value: 92, note: 'Climbs the three-tier research ladder.' },
+  { key: 'STA', name: 'Thesis Stamina', value: 88, note: 'Survives revisions from three panelists.' },
+  { key: 'SPD', name: 'Response Speed', value: 74, note: 'One request at a time on a single RTX 4050.' },
+  { key: 'LCK', name: 'Curve Luck', value: 41, note: 'Does not believe in the curve. Studies instead.' },
+]
+const AOI_SKILLS: { name: string; kind: 'Passive' | 'Active'; desc: string; icon: React.ReactNode }[] = [
+  { name: 'Handbook Recall', kind: 'Passive', desc: 'Answers policy questions from the Student Handbook and Registrar memos, always with citations. 100% chance to cite the page.', icon: <><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" /><path d="M4 19V5M9 7h6" /></> },
+  { name: 'Homework Guard', kind: 'Passive', desc: 'When asked to complete graded work, refuses and casts Study Guidance instead. Cannot be dispelled by "please po".', icon: <path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z" /> },
+  { name: 'Consent Barrier', kind: 'Active', desc: 'Before any external research, anonymizes the query and asks for consent. Grants Data Sovereignty to the whole party.', icon: <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></> },
+  { name: 'One-Slot Focus', kind: 'Passive', desc: 'Serves inquiries one at a time on the campus GPU, strictly first come, first served. Fairness +100%.', icon: <><rect x="3" y="7" width="18" height="10" rx="2" /><path d="M7 11h2M7 13h2M13 10v4M16 10v4" /></> },
+]
+const AOI_LOADOUT = [
+  ['Main', 'Local RAG Index', 'Handbook, memos, curricula'],
+  ['Sub', 'PII Stripper', 'Names, IDs, emails, phones'],
+  ['Auxiliary', 'RTX 4050 · 6 GB', 'One answer at a time'],
+  ['Accessory', 'Audit Log', 'Correlation ID per reply'],
+]
+const AOI_LINES = [
+  'Did you read the handbook? ...It’s okay, I read it for both of us.',
+  'I can’t write your essay, but I can help you outline it.',
+  'Your data stays on campus. Pinky promise.',
+  'One at a time, please. The GPU is only 6 GB.',
+  'A citation a day keeps the plagiarism checker away.',
+  'Midterms? Deep breath first. Then flashcards.',
+  'Enrollment requirements? Form 138, good moral, PSA, two 2×2 photos. You’re welcome.',
+]
+// Pre-rendered voice lines (Kokoro TTS, Apache-2.0), one folder per voice pack, files named by line index.
+const VOICE_FILES = import.meta.glob('./voice/*/*.mp3', { eager: true, query: '?url', import: 'default' }) as Record<string, string>
+const VOICE_PACKS = [
+  { id: 'warm', name: 'Warm', desc: 'Mature, warm' },
+  { id: 'refined', name: 'Refined', desc: 'Soft British' },
+  { id: 'gentle', name: 'Gentle', desc: 'Whisper-soft' },
+] as const
+type VoicePack = (typeof VOICE_PACKS)[number]['id']
+// Fallback voice: browser speech synthesis, tuned soft and mature (slightly slower, slightly lower).
+const VOICE_PREFS = [
+  /\b(Aria|Jenny|Sonia|Libby|Natasha|Clara|Emma|Ava)\b.*(Natural|Online)/i,
+  /Google UK English Female/i,
+  /\b(Samantha|Serena|Karen|Moira|Tessa|Martha)\b/i,
+  /\b(Aria|Jenny|Sonia|Libby|Zira|Hazel|Susan|Catherine)\b/i,
+  /female/i,
+]
+const pickVoice = () => {
+  const all = window.speechSynthesis?.getVoices() ?? []
+  const en = all.filter((v) => /^en(-|_|$)/i.test(v.lang))
+  for (const re of VOICE_PREFS) {
+    const v = en.find((x) => re.test(x.name))
+    if (v) return v
+  }
+  return en[0] ?? null
+}
+const spoken = (t: string) => t.replace(/2×2/g, 'two by two').replace(/…|\.\.\./g, '… ')
+const grade = (v: number) => (v >= 95 ? 'S' : v >= 85 ? 'A' : v >= 70 ? 'B' : 'C')
+const GOLD = 'linear-gradient(135deg, #FDE68A 0%, #F6C445 40%, #B7791F 100%)'
+
+export function AoiProfile({ onBack, renderFigure, aspect }: { onBack: () => void; renderFigure: (onPoke: () => void, width: number, talking: boolean) => React.ReactNode; aspect: number }) {
+  const [line, setLine] = useState<number | null>(null)
+  // Fit the full-body figure to the stage height (head to toe always visible).
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [figW, setFigW] = useState(0)
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const fit = () => {
+      const h = el.clientHeight - 24
+      const w = Math.min(el.clientWidth - 24, h * aspect)
+      setFigW(Math.max(120, Math.round(w / 8) * 8))
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [aspect])
+  const timer = useRef(0)
+  const lineRef = useRef<number | null>(null)
+  const [talking, setTalking] = useState(false)
+  const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window
+  const [voiceOn, setVoiceOn] = useState(() => {
+    try {
+      return localStorage.getItem('aoi.voice') !== 'off'
+    } catch {
+      return true
+    }
+  })
+  const [pack, setPack] = useState<VoicePack>(() => {
+    try {
+      const v = localStorage.getItem('aoi.voicepack')
+      return VOICE_PACKS.some((p) => p.id === v) ? (v as VoicePack) : 'warm'
+    } catch {
+      return 'warm'
+    }
+  })
+  const voice = useRef<SpeechSynthesisVoice | null>(null)
+  const audio = useRef<HTMLAudioElement | null>(null)
+  const meter = useRef<{ ctx: AudioContext; an: AnalyserNode; buf: Uint8Array<ArrayBuffer>; freq: Uint8Array<ArrayBuffer> } | null>(null)
+  const raf = useRef(0)
+  // Real lip-sync: publish the clip's loudness on the stage; the avatar rig reads it.
+  const pump = () => {
+    const m = meter.current
+    const el = stageRef.current
+    if (!m || !el) return
+    m.an.getByteTimeDomainData(m.buf)
+    let sum = 0
+    for (const v of m.buf) sum += ((v - 128) / 128) ** 2
+    const rms = Math.sqrt(sum / m.buf.length)
+    // Noise gate + gentle curve so quiet consonants don't flap the jaw.
+    el.dataset.lip = Math.pow(Math.min(1, Math.max(0, (rms - 0.018) * 10)), 0.75).toFixed(3)
+    // Viseme hint from the spectral centroid (≈300 Hz–3.5 kHz): bright = wide "e/i", dark = round "o/u".
+    m.an.getByteFrequencyData(m.freq)
+    const hz = m.ctx.sampleRate / m.an.fftSize
+    const lo = Math.floor(300 / hz), hi = Math.min(m.freq.length - 1, Math.ceil(3500 / hz))
+    let wsum = 0, msum = 0
+    for (let i = lo; i <= hi; i++) {
+      wsum += m.freq[i] * i * hz
+      msum += m.freq[i]
+    }
+    const centroid = msum > 0 ? wsum / msum : 1200
+    el.dataset.form = Math.min(1, Math.max(0, (centroid - 700) / 1300)).toFixed(3)
+    raf.current = requestAnimationFrame(pump)
+  }
+  const stopAudio = () => {
+    cancelAnimationFrame(raf.current)
+    audio.current?.pause()
+    if (stageRef.current) {
+      delete stageRef.current.dataset.lip
+      delete stageRef.current.dataset.form
+    }
+    if (canSpeak) speechSynthesis.cancel()
+  }
+  useEffect(() => {
+    const load = () => (voice.current = pickVoice())
+    if (canSpeak) {
+      load()
+      speechSynthesis.addEventListener('voiceschanged', load)
+    }
+    return () => {
+      if (canSpeak) speechSynthesis.removeEventListener('voiceschanged', load)
+      stopAudio()
+      meter.current?.ctx.close().catch(() => {})
+      clearTimeout(timer.current)
+    }
+  }, [canSpeak])
+  const hideLater = (ms: number) => {
+    clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => {
+      setLine(null)
+      setTalking(false)
+      lineRef.current = null
+    }, ms)
+  }
+  const speakFallback = (text: string, n: number) => {
+    if (!canSpeak) return
+    const u = new SpeechSynthesisUtterance(spoken(text))
+    if (voice.current) u.voice = voice.current
+    u.lang = voice.current?.lang ?? 'en-US'
+    u.rate = 0.9
+    u.pitch = 0.96
+    u.volume = 0.9
+    u.onstart = () => {
+      setTalking(true)
+      // Safety net in case the browser never fires onend.
+      hideLater(4000 + text.length * 90)
+    }
+    u.onend = u.onerror = () => {
+      setTalking(false)
+      if (lineRef.current === n) hideLater(1400)
+    }
+    speechSynthesis.speak(u)
+  }
+  const playClip = (url: string, text: string, n: number) => {
+    if (!audio.current) {
+      audio.current = new Audio()
+      audio.current.preload = 'auto'
+    }
+    const el = audio.current
+    try {
+      if (!meter.current) {
+        const ctx = new AudioContext()
+        const an = ctx.createAnalyser()
+        an.fftSize = 1024
+        ctx.createMediaElementSource(el).connect(an)
+        an.connect(ctx.destination)
+        meter.current = { ctx, an, buf: new Uint8Array(an.fftSize), freq: new Uint8Array(an.frequencyBinCount) }
+      }
+      void meter.current.ctx.resume()
+    } catch {}
+    el.onplaying = () => {
+      setTalking(true)
+      hideLater(4000 + (el.duration || text.length / 12) * 1000)
+      cancelAnimationFrame(raf.current)
+      pump()
+    }
+    el.onended = () => {
+      cancelAnimationFrame(raf.current)
+      if (stageRef.current) {
+        delete stageRef.current.dataset.lip
+        delete stageRef.current.dataset.form
+      }
+      setTalking(false)
+      if (lineRef.current === n) hideLater(1400)
+    }
+    el.src = url
+    el.play().catch(() => {
+      setTalking(false)
+      speakFallback(text, n)
+    })
+  }
+  const say = (i?: number, usePack: VoicePack = pack) => {
+    let n = i ?? Math.floor(Math.random() * AOI_LINES.length)
+    if (i === undefined && n === lineRef.current) n = (n + 1) % AOI_LINES.length
+    lineRef.current = n
+    setLine(n)
+    const text = AOI_LINES[n]
+    // Fallback timing when the voice is off: ~reading speed.
+    hideLater(2200 + text.length * 45)
+    stopAudio()
+    setTalking(false)
+    if (!voiceOn) return
+    const url = VOICE_FILES[`./voice/${usePack}/${n}.mp3`]
+    if (url) playClip(url, text, n)
+    else speakFallback(text, n)
+  }
+  const choosePack = (id: VoicePack) => {
+    setPack(id)
+    try {
+      localStorage.setItem('aoi.voicepack', id)
+    } catch {}
+    if (voiceOn) say(2, id)
+  }
+  const toggleVoice = () => {
+    setVoiceOn((v) => {
+      const next = !v
+      try {
+        localStorage.setItem('aoi.voice', next ? 'on' : 'off')
+      } catch {}
+      if (!next) {
+        stopAudio()
+        setTalking(false)
+      }
+      return next
+    })
+  }
+  const panel = 'rounded-2xl border border-t-line bg-t-surface/85 p-4 backdrop-blur-md md:p-5'
+  const head = (t: string, sub: string) => (
+    <div className="mb-3 flex items-baseline justify-between gap-3">
+      <h2 className="text-[13px] font-extrabold uppercase tracking-[0.14em]">{t}</h2>
+      <span className="text-[11px] text-t-muted">{sub}</span>
+    </div>
+  )
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-t-line bg-t-surface px-3 pb-2 pt-[calc(0.5rem+var(--sa-top))] shadow-[0_4px_20px_rgba(0,0,0,0.3)] md:px-6">
+        <button type="button" aria-label="Back to chat" onClick={onBack} className="flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200 hover:bg-t-tint/10 active:scale-90">
+          <svg {...ico} width={20} height={20}><path d="M15 18l-6-6 6-6" /></svg>
+        </button>
+        <div className="min-w-0">
+          <h1 className="truncate text-[16px] font-bold leading-tight">Character Profile</h1>
+          <p className="truncate text-[11px] text-t-muted">AOI · Academic Operations Intelligence</p>
+        </div>
+      </header>
+
+      <main className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-4 pb-[calc(2rem+var(--sa-bottom))] pt-4 md:px-8 md:pt-6">
+        <div className="mx-auto grid w-full max-w-[1120px] gap-4 md:grid-cols-[minmax(0,400px)_1fr] md:gap-6">
+          {/* Stage */}
+          <section aria-label="AOI full body" className="relative md:sticky md:top-0 md:self-start">
+            <div
+              ref={stageRef}
+              className="aoi-fade-in relative flex h-[560px] items-end justify-center overflow-hidden rounded-[28px] border border-[#B7791F]/50 md:h-[calc(100vh-9rem)] md:max-h-[760px] md:min-h-[560px]"
+              style={{ background: 'radial-gradient(120% 70% at 50% 30%, #5a0d16 0%, #2a050a 45%, #0b0507 100%)' }}
+            >
+              <span aria-hidden className="absolute inset-0 opacity-[0.08]" style={{ backgroundImage: 'repeating-linear-gradient(135deg, #fff 0 1px, transparent 1px 26px)' }} />
+              <span aria-hidden className="absolute left-1/2 top-[18%] h-[360px] w-[360px] -translate-x-1/2 rounded-full bg-[#B01E2E]/35 blur-[90px]" />
+              <span aria-hidden className="pointer-events-none absolute -right-3 top-6 select-none font-black leading-none text-white/[0.06]" style={{ fontSize: 150, writingMode: 'vertical-rl' }}>AOI</span>
+              <span aria-hidden className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/70 to-transparent" />
+
+              <div className="absolute left-4 top-4 z-10 flex flex-col items-start gap-1.5">
+                <span className="rounded-md px-2.5 py-0.5 text-[22px] font-black italic leading-tight tracking-tight text-[#2a1600] shadow-[0_4px_16px_rgba(246,196,69,0.35)]" style={{ background: GOLD }}>SSR</span>
+                <span className="flex gap-0.5" aria-label="Five stars: Latin honors">
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <svg key={i} width="14" height="14" viewBox="0 0 24 24" fill="#F6C445" aria-hidden><path d="m12 2 3 6.6 7 .8-5.2 4.8 1.4 7L12 17.8 5.8 21.2l1.4-7L2 9.4l7-.8z" /></svg>
+                  ))}
+                </span>
+                <span className="text-[10.5px] font-bold uppercase tracking-[0.16em] text-[#FDE68A]/90">Summa Cum Laude</span>
+              </div>
+              <div className="absolute right-4 top-4 z-10 text-right text-white">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/60">Class</p>
+                <p className="text-[13px] font-extrabold">Scholar-ship</p>
+              </div>
+
+              <div className="relative z-[5] mb-3 flex items-end justify-center">{figW > 0 && renderFigure(() => say(), figW, talking)}</div>
+
+              {/* Secretary-line dialogue box: sits low on the stage so it never covers her face */}
+              {line !== null && (
+                <div
+                  key={line}
+                  role="status"
+                  aria-live="polite"
+                  className="aoi-in absolute inset-x-3 bottom-[72px] z-20 rounded-2xl border border-[#B7791F]/60 bg-[#12070a]/85 px-4 pb-3 pt-2.5 text-white shadow-[0_12px_30px_rgba(0,0,0,0.5)] backdrop-blur-md"
+                >
+                  <p className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.16em] text-[#FDE68A]">
+                    AOI
+                    {talking && (
+                      <span className="flex items-end gap-0.5" aria-hidden>
+                        {[0, 1, 2].map((i) => (
+                          <span key={i} className="aoi-wave h-2.5 w-0.5 rounded-full bg-[#FDE68A]" style={{ animationDelay: `${i * 0.12}s` }} />
+                        ))}
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-1 text-[13.5px] font-medium leading-snug">{AOI_LINES[line]}</p>
+                </div>
+              )}
+
+              <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between px-4 pb-3 text-white">
+                <div>
+                  <p className="text-[28px] font-black leading-none tracking-tight">AOI</p>
+                  <p className="mt-1 text-[11px] font-medium text-white/70">aoi-scholar · MSU–ZS</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <p className="text-[11px] font-medium text-white/60">Tap her to talk</p>
+                  {(
+                    <button
+                      type="button"
+                      onClick={toggleVoice}
+                      aria-pressed={voiceOn}
+                      aria-label={voiceOn ? 'Mute AOI’s voice' : 'Unmute AOI’s voice'}
+                      title={voiceOn ? 'Voice on' : 'Voice off'}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-white/25 bg-black/30 text-white transition-colors hover:bg-white/15"
+                    >
+                      <svg {...ico} width={15} height={15}>
+                        <path d="M11 5 6 9H3v6h3l5 4z" />
+                        {voiceOn ? <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /> : <path d="m16 9 5 6M21 9l-5 6" />}
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Info */}
+          <div className="flex min-w-0 flex-col gap-4">
+            <section className={`${panel} aoi-in`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full px-2.5 py-0.5 text-[11px] font-extrabold text-[#2a1600]" style={{ background: GOLD }}>SSR · Summa Cum Laude</span>
+                <span className="rounded-full border border-[#800000]/60 bg-[#800000]/15 px-2.5 py-0.5 text-[11px] font-bold text-t-accent">Scholar-ship</span>
+                <span className="rounded-full border border-t-line2 px-2.5 py-0.5 text-[11px] font-semibold text-t-soft">Faction: MSU–Zamboanga Sibugay</span>
+              </div>
+              <h2 className="mt-3 text-[28px] font-black leading-tight tracking-tight md:text-[34px]">AOI</h2>
+              <p className="text-[13.5px] text-t-muted">Academic Operations Intelligence · Campus AI Assistant</p>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {[
+                  ['Lv. 125', 'Units earned'],
+                  ['1.00', 'GWA'],
+                  ['100', "Affinity · Dean's Lister"],
+                ].map(([v, l]) => (
+                  <div key={l} className="rounded-xl border border-t-line bg-t-tint/5 px-3 py-2.5">
+                    <p className="font-mono text-[20px] font-bold leading-none text-t-accent">{v}</p>
+                    <p className="mt-1 text-[11px] leading-tight text-t-muted">{l}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className={`${panel} aoi-in`} style={{ animationDelay: '0.05s' }} aria-label="Stats">
+              {head('Stats', 'Graded on the S–C scale')}
+              <ul className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                {AOI_STATS.map((st) => {
+                  const g = grade(st.value)
+                  return (
+                    <li key={st.key} title={st.note}>
+                      <div className="flex items-center gap-2">
+                        <span className="w-9 shrink-0 font-mono text-[11px] font-bold text-t-muted">{st.key}</span>
+                        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{st.name}</span>
+                        <span className="font-mono text-[12px] text-t-soft">{st.value}</span>
+                        <span
+                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded text-[11px] font-black ${g === 'S' ? 'text-[#2a1600]' : g === 'A' ? 'bg-[#800000] text-white' : 'bg-t-tint/15 text-t-soft'}`}
+                          style={g === 'S' ? { background: GOLD } : undefined}
+                        >
+                          {g}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-t-tint/10">
+                        <div className="h-full rounded-full" style={{ width: `${st.value}%`, background: g === 'S' ? GOLD : 'linear-gradient(90deg, #4a0000, #B01E2E)' }} />
+                      </div>
+                      <p className="mt-1 text-[11px] leading-snug text-t-muted">{st.note}</p>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+
+            <section className={`${panel} aoi-in`} style={{ animationDelay: '0.1s' }} aria-label="Skills">
+              {head('Skills', 'Mapped to real AOI features')}
+              <ul className="flex flex-col gap-2.5">
+                {AOI_SKILLS.map((sk) => (
+                  <li key={sk.name} className="flex gap-3 rounded-xl border border-t-line bg-t-tint/5 p-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white" style={{ background: 'linear-gradient(145deg, #B01E2E, #4a0000)' }}>
+                      <svg {...ico} width={20} height={20}>{sk.icon}</svg>
+                    </span>
+                    <div className="min-w-0">
+                      <p className="flex flex-wrap items-center gap-2 text-[14px] font-bold">
+                        {sk.name}
+                        <span className={`rounded px-1.5 py-px text-[10px] font-bold uppercase tracking-[0.08em] ${sk.kind === 'Active' ? 'bg-[#800000] text-white' : 'border border-t-line2 text-t-muted'}`}>{sk.kind}</span>
+                      </p>
+                      <p className="mt-0.5 text-[12.5px] leading-relaxed text-t-muted">{sk.desc}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className={`${panel} aoi-in`} style={{ animationDelay: '0.15s' }} aria-label="Syllabus loadout">
+              {head('Syllabus Loadout', 'Equipped')}
+              <ul className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+                {AOI_LOADOUT.map(([slot, name, sub]) => (
+                  <li key={slot} className="rounded-xl border border-dashed border-[#B7791F]/50 bg-t-tint/5 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-t-muted">{slot}</p>
+                    <p className="mt-1 text-[13px] font-bold leading-snug">{name}</p>
+                    <p className="mt-0.5 text-[11px] leading-snug text-t-muted">{sub}</p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className={`${panel} aoi-in`} style={{ animationDelay: '0.2s' }} aria-label="Dossier">
+              {head('Dossier', 'Registrar-certified')}
+              <dl className="grid grid-cols-[96px_1fr] gap-x-3 gap-y-2 text-[13px]">
+                <dt className="text-t-muted">Code name</dt><dd className="font-mono">aoi-scholar</dd>
+                <dt className="text-t-muted">Enrolled</dt><dd>MSU–Zamboanga Sibugay · every program, auditing</dd>
+                <dt className="text-t-muted">Likes</dt><dd>Well-cited sources, quiet library hours, CHED memos with page numbers</dd>
+                <dt className="text-t-muted">Dislikes</dt><dd>Plagiarism, unread handbooks, “pa-copy po” requests</dd>
+                <dt className="text-t-muted">Motto</dt><dd className="font-semibold italic">“Cite first, answer second.”</dd>
+              </dl>
+            </section>
+
+            <section className={`${panel} aoi-in`} style={{ animationDelay: '0.25s' }} aria-label="Secretary lines">
+              {head('Secretary Lines', voiceOn ? 'Tap to hear her voice' : 'Voice muted')}
+              <div role="radiogroup" aria-label="AOI voice" className="mb-3 grid grid-cols-3 gap-1.5 rounded-xl border border-t-line bg-t-tint/5 p-1">
+                {VOICE_PACKS.map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={pack === v.id}
+                    onClick={() => choosePack(v.id)}
+                    className={`rounded-lg px-2 py-1.5 text-left transition-colors ${pack === v.id ? 'bg-[#800000] text-white' : 'hover:bg-t-tint/10'}`}
+                  >
+                    <span className="block text-[12.5px] font-bold">{v.name}</span>
+                    <span className={`block text-[10.5px] ${pack === v.id ? 'text-white/75' : 'text-t-muted'}`}>{v.desc}</span>
+                  </button>
+                ))}
+              </div>
+              <ul className="flex flex-col gap-1.5">
+                {AOI_LINES.map((l, i) => (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      onClick={() => say(i)}
+                      aria-pressed={line === i}
+                      className={`flex w-full items-start gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors ${line === i ? 'bg-[#800000] text-white' : 'hover:bg-t-tint/10'}`}
+                    >
+                      <svg {...ico} width={14} height={14} className="mt-0.5 shrink-0"><path d="M11 5 6 9H3v6h3l5 4z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /></svg>
+                      <span>{l}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-[11px] text-t-subtle">Voice lines generated with Kokoro TTS (open source, Apache-2.0).</p>
+            </section>
           </div>
         </div>
       </main>
