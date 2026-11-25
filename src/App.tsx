@@ -709,12 +709,15 @@ const BACKGROUNDS = [
   { id: 'maroon', name: 'Maroon', css: 'linear-gradient(170deg, var(--mar-1) 0%, var(--mar-2) 45%, var(--mar-3) 100%)' },
 ]
 
+// Backend model contract: `id` is the exact string stored in settings.model and sent as `model`
+// in POST /v1/chat/completions. The backend honors only these four ids; `name` is display-only.
 const MODELS = [
-  { name: 'AOI General', tag: 'Default', desc: 'Balanced answers for everyday questions' },
-  { name: 'AOI Policy', tag: 'Strict', desc: 'Citation-first answers from official documents' },
-  { name: 'AOI STEM Deep', tag: 'Reasoning', desc: 'Step-by-step help on harder problems' },
-  { name: 'AOI STEM Fast', tag: 'Quick', desc: 'Short, fast answers for STEM questions' },
-]
+  { id: 'aoi-general', name: 'AOI General', tag: 'Default', desc: 'Balanced answers for everyday questions' },
+  { id: 'aoi-policy', name: 'AOI Policy', tag: 'Strict', desc: 'Citation-first answers from official documents' },
+  { id: 'aoi-scholar', name: 'AOI STEM Deep', tag: 'Reasoning', desc: 'Step-by-step help on harder problems' },
+  { id: 'aoi-scholarmini', name: 'AOI STEM Fast', tag: 'Quick', desc: 'Short, fast answers for STEM questions' },
+] as const
+type ModelId = (typeof MODELS)[number]['id']
 
 type Chat = { id: number; title: string; msgs: Msg[]; updated: number; pinned?: boolean; renamed?: boolean }
 
@@ -797,7 +800,13 @@ const cleanEndpoint = (x: unknown, d: LlmEndpoint): LlmEndpoint => {
 }
 const cleanLlm = (x: unknown): LlmConfig => {
   const o = isObj(x) ? x : {}
-  return { local: isObj(o.local) ? cleanEndpoint(o.local, DEFAULT_LLM.local) : DEFAULT_LLM.local, external: isObj(o.external) ? cleanEndpoint(o.external, DEFAULT_LLM.external) : DEFAULT_LLM.external }
+  const cfg = { local: isObj(o.local) ? cleanEndpoint(o.local, DEFAULT_LLM.local) : DEFAULT_LLM.local, external: isObj(o.external) ? cleanEndpoint(o.external, DEFAULT_LLM.external) : DEFAULT_LLM.external }
+  // A set VITE_* URL wins over a saved one, so editing .env.local takes effect on the next load
+  // (the llm effect writes the result back to localStorage).
+  const lu = String(ENV.VITE_AOI_LLM_URL ?? '').trim(), eu = String(ENV.VITE_AOI_EXTERNAL_URL ?? '').trim()
+  if (lu && cfg.local.baseUrl !== lu) cfg.local = { ...cfg.local, baseUrl: lu }
+  if (eu && cfg.external.baseUrl !== eu) cfg.external = { ...cfg.external, baseUrl: eu }
+  return cfg
 }
 const usable = (e: LlmEndpoint) => !!e.baseUrl && !!e.model
 const endpointFor = (cfg: LlmConfig, route: Route) => (route === 'research' && usable(cfg.external) ? cfg.external : cfg.local)
@@ -814,11 +823,11 @@ const ROUTE_PROMPTS: Record<Route, string> = {
     'The user is asking you to complete graded work. Do not write the essay, solve the assignment or give final answers to graded tasks. ' +
     'Instead, explain the underlying concepts, outline an approach, ask a guiding question, and offer to review their own attempt. Be encouraging, not preachy.',
 }
-const MODE_PROMPTS: Record<string, string> = {
-  'AOI General': '',
-  'AOI Policy': 'Prioritise official documents and always name the office to confirm with.',
-  'AOI STEM Deep': 'Work step by step and show your reasoning clearly.',
-  'AOI STEM Fast': 'Be brief: 1–4 sentences unless the user asks for more.',
+const MODE_PROMPTS: Record<ModelId, string> = {
+  'aoi-general': '',
+  'aoi-policy': 'Prioritise official documents and always name the office to confirm with.',
+  'aoi-scholar': 'Work step by step and show your reasoning clearly.',
+  'aoi-scholarmini': 'Be brief: 1–4 sentences unless the user asks for more.',
 }
 const HISTORY_TURNS = 12
 
@@ -854,23 +863,35 @@ async function streamChat(e: LlmEndpoint, messages: { role: 'system' | 'user' | 
   const reader = res.body.getReader()
   const dec = new TextDecoder()
   let buf = ''
+  // Returns true on the [DONE] terminator.
+  const handle = (line: string) => {
+    const l = line.trim()
+    if (!l.startsWith('data:')) return false
+    const data = l.slice(5).trim()
+    if (data === '[DONE]') return true
+    try {
+      const delta = JSON.parse(data)?.choices?.[0]?.delta?.content
+      if (typeof delta === 'string' && delta) onDelta(delta)
+    } catch {}
+    return false
+  }
   for (;;) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buf += dec.decode(value, { stream: true })
+    let chunk: ReadableStreamReadResult<Uint8Array>
+    try {
+      chunk = await reader.read()
+    } catch (err) {
+      if (signal.aborted) throw err
+      throw new LlmError('network', 'The connection to the model server dropped mid-reply.')
+    }
+    if (chunk.done) break
+    buf += dec.decode(chunk.value, { stream: true })
     const lines = buf.split('\n')
     buf = lines.pop() ?? ''
-    for (const line of lines) {
-      const l = line.trim()
-      if (!l.startsWith('data:')) continue
-      const data = l.slice(5).trim()
-      if (data === '[DONE]') return
-      try {
-        const delta = JSON.parse(data)?.choices?.[0]?.delta?.content
-        if (typeof delta === 'string' && delta) onDelta(delta)
-      } catch {}
-    }
+    for (const line of lines) if (handle(line)) return
   }
+  // Stream closed without [DONE]: keep what arrived, including a final unterminated line.
+  buf += dec.decode()
+  for (const line of buf.split('\n')) if (handle(line)) return
 }
 async function listModels(e: LlmEndpoint): Promise<string[]> {
   if (!e.baseUrl) throw new LlmError('config', 'Add a server URL first.')
@@ -907,8 +928,8 @@ const secs = (ms: number) => `${Math.max(1, Math.ceil(ms / 1000))}s`
 const FONT_SIZES = { sm: 13, md: 14, lg: 16 } as const
 const TEXT_ZOOM = { sm: 0.92, md: 1, lg: 1.14 } as const
 type Theme = 'system' | 'light' | 'dark'
-type Settings = { theme: Theme; fontSize: keyof typeof FONT_SIZES; showTime: boolean; bgId: string; bgDim: number; model: string }
-const DEFAULT_SETTINGS: Settings = { theme: 'system', fontSize: 'md', showTime: true, bgId: 'default', bgDim: 35, model: 'AOI General' }
+type Settings = { theme: Theme; fontSize: keyof typeof FONT_SIZES; showTime: boolean; bgId: string; bgDim: number; model: ModelId }
+const DEFAULT_SETTINGS: Settings = { theme: 'system', fontSize: 'md', showTime: true, bgId: 'default', bgDim: 35, model: 'aoi-general' }
 const cleanSettings = (x: unknown): Settings => {
   const s = isObj(x) ? x : {}
   const d = DEFAULT_SETTINGS
@@ -918,7 +939,8 @@ const cleanSettings = (x: unknown): Settings => {
     showTime: typeof s.showTime === 'boolean' ? s.showTime : d.showTime,
     bgId: typeof s.bgId === 'string' && (s.bgId === 'custom' || BACKGROUNDS.some((b) => b.id === s.bgId)) ? s.bgId : d.bgId,
     bgDim: typeof s.bgDim === 'number' && Number.isFinite(s.bgDim) ? Math.min(80, Math.max(0, s.bgDim)) : d.bgDim,
-    model: typeof s.model === 'string' && s.model.length <= 60 ? s.model : d.model,
+    // Accept only canonical ids; migrate labels saved by older builds (e.g. 'AOI General' → 'aoi-general').
+    model: MODELS.find((m) => m.id === s.model || m.name === s.model)?.id ?? d.model,
   }
 }
 
@@ -1231,19 +1253,21 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(() => cleanSettings(load<unknown>('aoi.settings', () => ({}))))
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<'general' | 'model'>('general')
-  const [probe, setProbe] = useState<Record<'local' | 'external', { state: 'idle' | 'loading' | 'ok' | 'error'; msg: string; models: string[] }>>({
-    local: { state: 'idle', msg: '', models: [] },
-    external: { state: 'idle', msg: '', models: [] },
+  const [probe, setProbe] = useState<Record<'local' | 'external', { state: 'idle' | 'loading' | 'ok' | 'error'; msg: string; models: string[]; url: string }>>({
+    local: { state: 'idle', msg: '', models: [], url: '' },
+    external: { state: 'idle', msg: '', models: [], url: '' },
   })
   const testEndpoint = async (which: 'local' | 'external') => {
-    setProbe((p) => ({ ...p, [which]: { ...p[which], state: 'loading', msg: 'Connecting…' } }))
+    // Same URL listModels() fetches, shown verbatim so a demo failure is diagnosable from the screen.
+    const url = apiUrl(llm[which], '/models')
+    setProbe((p) => ({ ...p, [which]: { ...p[which], state: 'loading', msg: `probing ${url} ...`, url } }))
     try {
       const models = await listModels(llm[which])
-      setProbe((p) => ({ ...p, [which]: { state: 'ok', msg: models.length ? `Connected · ${models.length} model${models.length === 1 ? '' : 's'} available` : 'Connected', models } }))
+      setProbe((p) => ({ ...p, [which]: { state: 'ok', msg: `connected · ${models.length} model${models.length === 1 ? '' : 's'}`, models, url } }))
       if (!llm[which].model && models[0]) setLlm((c) => ({ ...c, [which]: { ...c[which], model: models[0] } }))
       if (which === 'local') setLlmStatus('ok')
     } catch (err) {
-      setProbe((p) => ({ ...p, [which]: { state: 'error', msg: err instanceof Error ? err.message : 'Connection failed', models: [] } }))
+      setProbe((p) => ({ ...p, [which]: { state: 'error', msg: `unreachable · ${err instanceof Error ? err.message : 'Connection failed'}`, models: [], url } }))
       if (which === 'local') setLlmStatus('error')
     }
   }
@@ -1383,8 +1407,12 @@ export default function App() {
       setMsgs((m) => m.map((x) => (x.id === id ? { ...x, text: acc } : x)))
       follow()
     }
+    // Send the selected mode id as `model` so the backend honors the user's choice; the audit
+    // log records this same value (or 'None' when nothing could be sent).
+    const sent = usable(ep) ? { ...ep, model } : ep
+    const sentModel = usable(ep) ? model : 'None'
     try {
-      await streamChat(ep, [{ role: 'system', content: system }, ...turns, { role: 'user', content: prompt }], ctrl.signal, (delta) => {
+      await streamChat(sent, [{ role: 'system', content: system }, ...turns, { role: 'user', content: prompt }], ctrl.signal, (delta) => {
         acc += delta
         if (!created) {
           created = true
@@ -1397,7 +1425,7 @@ export default function App() {
       if (!created) setMsgs((m) => [...m, { id, role: 'aoi', text: '_The model returned an empty reply. Try rephrasing or regenerating._', cid, time: stamp(), external: route === 'research' }])
       else flush()
       const path = { homework: 'Policy Guard → Guided', policy: 'Local RAG', research: ep === llm.external ? 'PII Stripper → External' : 'PII Stripper → Local', general: 'Local LLM' }[route]
-      record(cid, intent, ep.model, path, route === 'research' && ep === llm.external, wait)
+      record(cid, intent, sentModel, path, route === 'research' && ep === llm.external, wait)
       setLlmStatus('ok')
       setRevealId(null)
       setPhase('idle')
@@ -1407,7 +1435,7 @@ export default function App() {
       const kind = err instanceof LlmError ? err.kind : 'server'
       const msg = err instanceof Error ? err.message : 'Something went wrong.'
       setLlmStatus(kind === 'config' ? 'unset' : 'error')
-      record(cid, 'Error', ep.model || 'None', 'Error handler', false, wait)
+      record(cid, 'Error', sentModel, 'Error handler', false, wait)
       const note =
         kind === 'config'
           ? 'AOI isn’t connected to a language model yet. Add your model server in **Settings → Model connection**, then try again.'
@@ -1525,7 +1553,7 @@ export default function App() {
   const [drag, setDrag] = useState<number | null>(null)
   const asideRef = useRef<HTMLElement>(null)
   const { model, bgId } = settings
-  const setModel = (m: string) => setSettings((x) => ({ ...x, model: m }))
+  const setModel = (m: ModelId) => setSettings((x) => ({ ...x, model: m }))
   const setBgId = (b: string) => setSettings((x) => ({ ...x, bgId: b }))
   const dim = settings.bgDim / 100
   const bg =
@@ -1850,7 +1878,7 @@ export default function App() {
             <Portal
               role={role}
               name={user.name}
-              onAsk={(t) => { newChat(); setModel('AOI General'); setView('chat'); setAutoAsk(t) }}
+              onAsk={(t) => { newChat(); setModel('aoi-general'); setView('chat'); setAutoAsk(t) }}
               avatar={<Avatar state="idle" width={isWide ? 190 : 112} />}
               onSignOut={signOut}
               counts={{ chats: chats.length, queries: auditAll.length, local: auditAll.length ? Math.round((auditAll.filter((r) => !r.external).length / auditAll.length) * 100) : 100 }}
@@ -2153,7 +2181,7 @@ export default function App() {
             onClick={() => setModelOpen((o) => !o)}
             className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[15px] font-semibold transition-colors duration-200 ease-in-out hover:bg-t-tint/10"
           >
-            {model}
+            {MODELS.find((m) => m.id === model)?.name ?? model}
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${modelOpen ? 'rotate-180' : ''}`} aria-hidden>
               <path d="m6 9 6 6 6-6" />
             </svg>
@@ -2167,15 +2195,15 @@ export default function App() {
               >
                 {MODELS.map((m) => (
                   <button
-                    key={m.name}
+                    key={m.id}
                     type="button"
                     role="menuitemradio"
-                    aria-checked={model === m.name}
+                    aria-checked={model === m.id}
                     onClick={() => {
-                      setModel(m.name)
+                      setModel(m.id)
                       setModelOpen(false)
                     }}
-                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-200 ease-in-out hover:bg-t-tint/10 ${model === m.name ? 'bg-t-tint/5' : ''}`}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-200 ease-in-out hover:bg-t-tint/10 ${model === m.id ? 'bg-t-tint/5' : ''}`}
                   >
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2 text-[14px] font-semibold">
@@ -2184,7 +2212,7 @@ export default function App() {
                       </span>
                       <span className="mt-0.5 block text-[12px] text-t-muted">{m.desc}</span>
                     </span>
-                    {model === m.name && (
+                    {model === m.id && (
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                         <path d="m5 12 5 5L20 7" />
                       </svg>
@@ -2243,7 +2271,7 @@ export default function App() {
         aria-hidden={!liveJobs.length}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="flex items-center gap-2 border-b border-t-line bg-t-surface/80 px-4 py-1.5 text-[12px] text-t-soft backdrop-blur-md md:px-6" role="status">
+          <div className="flex items-center gap-2 bg-t-surface/80 px-4 py-1.5 text-[12px] text-t-soft backdrop-blur-md md:px-6" role="status">
             <span className="relative flex h-2 w-2 shrink-0">
               <span className="absolute inset-0 animate-ping rounded-full bg-[#B01E2E] opacity-60" />
               <span className="relative h-2 w-2 rounded-full bg-[#B01E2E]" />
@@ -2254,6 +2282,7 @@ export default function App() {
             </span>
             <span className="ml-auto hidden shrink-0 text-[11px] text-t-muted sm:inline">First come, first served</span>
           </div>
+          <p className="border-b border-t-line bg-t-surface/80 px-4 pb-1.5 text-[11px] text-t-subtle backdrop-blur-md md:px-6">Queue simulation for demonstration. See backend /health for model status.</p>
         </div>
       </div>
 
@@ -2548,6 +2577,14 @@ export default function App() {
             }
           }}
         />
+        {llmStatus === 'error' && (
+          <p role="status" className="mx-auto mb-2 flex max-w-[800px] items-start gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-[12.5px] leading-snug text-t-fg">
+            <svg {...ico} width={14} height={14} className="mt-[2px] shrink-0 text-red-400" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16h.01" /></svg>
+            <span>
+              On-campus model unreachable. Check <code className="rounded bg-t-tint/10 px-1 font-mono text-[0.92em]">VITE_AOI_LLM_URL</code> or that ProBook:8000 is running.
+            </span>
+          </p>
+        )}
         {listening && <p className="mx-auto mb-2 max-w-[800px] text-center text-[12px] font-medium text-t-accent">Listening… tap the mic to stop</p>}
         <form
           onSubmit={(e) => {
@@ -2832,8 +2869,9 @@ export default function App() {
                           {pr.state === 'loading' ? 'Testing…' : 'Test connection'}
                         </button>
                         {pr.msg && (
-                          <span role="status" className={`min-w-0 text-[12px] leading-snug ${pr.state === 'ok' ? 'text-emerald-500' : pr.state === 'error' ? 'text-red-400' : 'text-t-muted'}`}>
+                          <span role="status" className={`min-w-0 break-all text-[12px] leading-snug ${pr.state === 'ok' ? 'text-emerald-500' : pr.state === 'error' ? 'text-red-400' : 'text-t-muted'}`}>
                             {pr.msg}
+                            {pr.state !== 'loading' && pr.url && <span className="mt-0.5 block font-mono text-[11px] text-t-subtle">GET {pr.url}</span>}
                           </span>
                         )}
                       </div>
