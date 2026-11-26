@@ -928,8 +928,8 @@ const secs = (ms: number) => `${Math.max(1, Math.ceil(ms / 1000))}s`
 const FONT_SIZES = { sm: 13, md: 14, lg: 16 } as const
 const TEXT_ZOOM = { sm: 0.92, md: 1, lg: 1.14 } as const
 type Theme = 'system' | 'light' | 'dark'
-type Settings = { theme: Theme; fontSize: keyof typeof FONT_SIZES; showTime: boolean; bgId: string; bgDim: number; model: ModelId }
-const DEFAULT_SETTINGS: Settings = { theme: 'system', fontSize: 'md', showTime: true, bgId: 'default', bgDim: 35, model: 'aoi-general' }
+type Settings = { theme: Theme; fontSize: keyof typeof FONT_SIZES; showTime: boolean; bgId: string; bgDim: number; model: ModelId; sidebarCollapsed: boolean }
+const DEFAULT_SETTINGS: Settings = { theme: 'system', fontSize: 'md', showTime: true, bgId: 'default', bgDim: 35, model: 'aoi-general', sidebarCollapsed: false }
 const cleanSettings = (x: unknown): Settings => {
   const s = isObj(x) ? x : {}
   const d = DEFAULT_SETTINGS
@@ -941,6 +941,7 @@ const cleanSettings = (x: unknown): Settings => {
     bgDim: typeof s.bgDim === 'number' && Number.isFinite(s.bgDim) ? Math.min(80, Math.max(0, s.bgDim)) : d.bgDim,
     // Accept only canonical ids; migrate labels saved by older builds (e.g. 'AOI General' → 'aoi-general').
     model: MODELS.find((m) => m.id === s.model || m.name === s.model)?.id ?? d.model,
+    sidebarCollapsed: typeof s.sidebarCollapsed === 'boolean' ? s.sidebarCollapsed : d.sidebarCollapsed,
   }
 }
 
@@ -1221,6 +1222,7 @@ export default function App() {
     setLlmStatus(usable(llm.local) ? 'unknown' : 'unset')
   }, [llm])
   const [input, setInput] = useState('')
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [phase, setPhase] = useState<'idle' | 'queued' | 'processing' | 'responding' | 'error'>('idle')
   const [listening, setListening] = useState(false)
   const [jobs, setJobs] = useState<Job[]>([])
@@ -1474,6 +1476,15 @@ export default function App() {
     const text = (override ?? input).trim().slice(0, MAX_MSG_CHARS)
     if (!text || phase === 'queued' || phase === 'processing' || phase === 'responding') return
     if (override === undefined) setInput('')
+    if (override === undefined && editingId !== null) {
+      // Edit & resend: drop the edited message and everything after it, then route as usual.
+      const idx = msgsRef.current.findIndex((m) => m.id === editingId)
+      if (idx >= 0) {
+        msgsRef.current = msgsRef.current.slice(0, idx)
+        setMsgs(msgsRef.current)
+      }
+      setEditingId(null)
+    }
     setListening(false)
     const route = classify(text)
     if (route === 'research') {
@@ -1511,6 +1522,7 @@ export default function App() {
   const waiting = liveJobs.filter((j) => j.start > now)
   const busy = phase === 'queued' || phase === 'processing' || phase === 'responding'
   const empty = msgs.length === 0
+  const lastUserId = [...msgs].reverse().find((m) => m.role === 'user')?.id
   const [emptyVisible, setEmptyVisible] = useState(true)
   const [ideas, setIdeas] = useState(pickSuggestions)
   const [pressed, setPressed] = useState(false)
@@ -1555,6 +1567,9 @@ export default function App() {
   const { model, bgId } = settings
   const setModel = (m: ModelId) => setSettings((x) => ({ ...x, model: m }))
   const setBgId = (b: string) => setSettings((x) => ({ ...x, bgId: b }))
+  // Desktop-only: hides the history column. The phone drawer ignores this.
+  const collapsed = isDesktop && settings.sidebarCollapsed
+  const toggleSidebar = () => setSettings((x) => ({ ...x, sidebarCollapsed: !x.sidebarCollapsed }))
   const dim = settings.bgDim / 100
   const bg =
     bgId === 'custom' && customBg
@@ -1570,6 +1585,9 @@ export default function App() {
         e.preventDefault()
         newChat()
         inputRef.current?.focus()
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b' && isDesktop) {
+        e.preventDefault()
+        toggleSidebar()
       } else if (e.key === '/' && !typing && !pending && !settingsOpen) {
         e.preventDefault()
         inputRef.current?.focus()
@@ -1606,6 +1624,7 @@ export default function App() {
     timers.current = []
     leaveQueue()
     setInput('')
+    setEditingId(null)
     setAttached([])
     setRevealId(null)
     setPhase('idle')
@@ -1721,6 +1740,21 @@ export default function App() {
     msgsRef.current = msgs.slice(0, idx)
     setMsgs(msgsRef.current)
     send(text)
+  }
+
+  const startEdit = (m: Msg) => {
+    setEditingId(m.id)
+    setInput(m.text)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    })
+  }
+  const cancelEdit = () => {
+    setEditingId(null)
+    setInput('')
   }
 
   const copyMsg = (m: Msg) => {
@@ -1966,7 +2000,7 @@ export default function App() {
       }}
     >
       <div aria-hidden className={`absolute inset-y-0 left-[var(--sa-left)] z-40 w-4 lg:hidden ${drawerOpen ? 'pointer-events-none' : ''}`} style={{ touchAction: 'none' }} />
-      <div className={`absolute inset-0 z-50 lg:pointer-events-auto lg:relative lg:inset-auto lg:z-auto lg:w-[300px] lg:shrink-0 ${drawerOpen ? '' : 'pointer-events-none'}`} aria-hidden={!drawerOpen && !isDesktop}>
+      <div className={`absolute inset-0 z-50 lg:pointer-events-auto lg:relative lg:inset-auto lg:z-auto lg:shrink-0 lg:overflow-hidden lg:transition-[width] lg:duration-300 lg:ease-[cubic-bezier(0.22,1,0.36,1)] ${collapsed ? 'lg:w-0' : 'lg:w-[300px]'} ${drawerOpen ? '' : 'pointer-events-none'}`} aria-hidden={(!drawerOpen && !isDesktop) || collapsed}>
         <div
           onClick={() => setDrawerOpen(false)}
           className={`absolute inset-0 bg-black/60 backdrop-blur-[2px] lg:hidden ${drag === null ? 'transition-opacity duration-300' : ''} ${drawerOpen ? 'opacity-100' : 'opacity-0'}`}
@@ -1975,9 +2009,9 @@ export default function App() {
         <aside
           ref={asideRef}
           style={drag !== null ? { transform: `translateX(${drag - (asideRef.current?.offsetWidth ?? 300)}px)`, transition: 'none' } : undefined}
-          inert={!drawerOpen && !isDesktop}
+          inert={(!drawerOpen && !isDesktop) || collapsed}
           aria-label="Navigation"
-          className={`absolute inset-y-0 left-0 flex w-[84%] max-w-[320px] flex-col lg:w-full lg:max-w-none lg:translate-x-0 lg:shadow-none border-r border-t-surface bg-t-deep text-t-fg shadow-[8px_0_32px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          className={`absolute inset-y-0 left-0 flex w-[84%] max-w-[320px] flex-col lg:w-[300px] lg:max-w-none lg:shadow-none ${collapsed ? 'lg:-translate-x-full' : 'lg:translate-x-0'} border-r border-t-surface bg-t-deep text-t-fg shadow-[8px_0_32px_rgba(0,0,0,0.5)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
           <div className="flex items-center justify-between px-5 pb-3 pt-[calc(1rem+var(--sa-top))]">
             <span className="flex items-center gap-1 text-[20px] font-extrabold tracking-tight">
@@ -2020,10 +2054,10 @@ export default function App() {
             <button
               type="button"
               onClick={newChat}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-[12px] font-semibold text-white shadow-[0_0_15px_rgba(128,0,0,0.4)] transition-all duration-200 ease-in-out hover:brightness-125 active:scale-[0.98]"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-[12px] font-semibold leading-none text-white shadow-[0_0_15px_rgba(128,0,0,0.4)] transition-all duration-200 ease-in-out hover:brightness-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-t-accent active:scale-[0.98]"
               style={{ background: 'linear-gradient(135deg, #800000, #600000)' }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" className="shrink-0" aria-hidden>
                 <path d="M12 5v14M5 12h14" />
               </svg>
               New Chat
@@ -2031,7 +2065,7 @@ export default function App() {
           </div>
 
           <div className="px-4 pb-1">
-            <label className="flex h-10 items-center gap-2 rounded-[12px] border border-t-surface bg-t-input px-3 transition-colors duration-200 ease-in-out focus-within:border-[#800000]">
+            <label className="flex h-10 items-center gap-2 rounded-[12px] border border-t-surface bg-t-input px-3 transition-colors duration-200 ease-in-out focus-within:border-t-accent">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--subtle)" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
                 <circle cx="11" cy="11" r="7" />
                 <path d="m20 20-3.5-3.5" />
@@ -2045,17 +2079,18 @@ export default function App() {
             </label>
           </div>
 
-          <nav className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-3 pb-3" style={{ touchAction: 'pan-y' }}>
+          <nav className="aoi-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-3" style={{ touchAction: 'pan-y' }}>
             {(() => {
               const list = [...chats].filter((c) => c.title.toLowerCase().includes(search.toLowerCase())).sort((x, y) => y.updated - x.updated)
               const pinned = list.filter((c) => c.pinned)
               const rest = list.filter((c) => !c.pinned)
-              const today = rest.filter((c) => Date.now() - c.updated < DAY)
-              const older = rest.filter((c) => Date.now() - c.updated >= DAY)
+              const midnight = new Date().setHours(0, 0, 0, 0)
               const groups = [
                 { label: 'Pinned', items: pinned },
-                { label: 'Recent Chats', items: today },
-                { label: 'Previous 7 Days', items: older },
+                { label: 'Today', items: rest.filter((c) => c.updated >= midnight) },
+                { label: 'Yesterday', items: rest.filter((c) => c.updated < midnight && c.updated >= midnight - DAY) },
+                { label: 'Previous 7 Days', items: rest.filter((c) => c.updated < midnight - DAY && c.updated >= midnight - 7 * DAY) },
+                { label: 'Older', items: rest.filter((c) => c.updated < midnight - 7 * DAY) },
               ].filter((g) => g.items.length)
               if (!groups.length) return <p className="px-3 pt-6 text-center text-[13px] text-t-subtle">{search ? 'No chats match your search.' : 'No conversations yet.'}</p>
               return groups.map((g) => (
@@ -2149,7 +2184,7 @@ export default function App() {
 
       <div className="flex min-w-0 flex-1 flex-col">
       <header
-        className={`relative z-30 grid h-[calc(3.5rem+var(--sa-top))] shrink-0 pt-[var(--sa-top)] grid-cols-[1fr_auto_1fr] items-center border-b px-3 md:px-6 lg:flex lg:justify-between shadow-[0_4px_20px_rgba(0,0,0,0.3)] transition-colors duration-300 ease-in-out border-t-line bg-t-surface text-t-fg`}
+        className={`relative z-30 grid h-[calc(3.5rem+var(--sa-top))] shrink-0 pt-[var(--sa-top)] grid-cols-[1fr_auto_1fr] items-center border-b px-3 md:px-6 lg:flex lg:justify-between shadow-elev-1 transition-colors duration-300 ease-in-out border-t-line bg-t-surface text-t-fg`}
       >
         <div className="flex items-center gap-0.5 justify-self-start">
           <button
@@ -2162,6 +2197,33 @@ export default function App() {
               <path d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
+          <button
+            type="button"
+            aria-label={collapsed ? 'Show chat history' : 'Hide chat history'}
+            aria-expanded={!collapsed}
+            title={`${collapsed ? 'Show' : 'Hide'} chat history (Ctrl+B)`}
+            onClick={toggleSidebar}
+            className="hidden h-10 w-10 items-center justify-center rounded-full text-t-muted transition-colors duration-200 ease-in-out hover:bg-t-tint/10 hover:text-t-fg active:scale-90 lg:flex"
+          >
+            <svg {...ico} width={20} height={20}>
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M9 4v16" />
+            </svg>
+          </button>
+          {collapsed && (
+            <button
+              type="button"
+              aria-label="New chat"
+              title="New chat (Ctrl+K)"
+              onClick={newChat}
+              className="aoi-fade-in hidden h-10 w-10 items-center justify-center rounded-full text-t-muted transition-colors duration-200 ease-in-out hover:bg-t-tint/10 hover:text-t-fg active:scale-90 lg:flex"
+            >
+              <svg {...ico} width={20} height={20}>
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             aria-label="Back to Portal"
@@ -2191,7 +2253,7 @@ export default function App() {
               <div className="fixed inset-0 z-40" onClick={() => setModelOpen(false)} />
               <div
                 role="menu"
-                className="aoi-menu absolute left-1/2 top-full z-50 mt-2 w-[264px] -translate-x-1/2 lg:left-0 lg:translate-x-0 rounded-2xl border border-t-line bg-t-surface p-1.5 text-t-fg shadow-[0_12px_32px_rgba(0,0,0,0.5)]"
+                className="aoi-menu absolute left-1/2 top-full z-50 mt-2 w-[264px] -translate-x-1/2 lg:left-0 lg:translate-x-0 rounded-2xl border border-t-line2 bg-t-surface p-1.5 text-t-fg shadow-elev-3"
               >
                 {MODELS.map((m) => (
                   <button
@@ -2203,7 +2265,7 @@ export default function App() {
                       setModel(m.id)
                       setModelOpen(false)
                     }}
-                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-200 ease-in-out hover:bg-t-tint/10 ${model === m.id ? 'bg-t-tint/5' : ''}`}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors duration-200 ease-in-out hover:bg-t-tint/10 focus-visible:bg-t-tint/10 focus-visible:outline-none ${model === m.id ? 'bg-[#800000]/10' : ''}`}
                   >
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2 text-[14px] font-semibold">
@@ -2219,6 +2281,7 @@ export default function App() {
                     )}
                   </button>
                 ))}
+                <div aria-hidden className="mx-2 my-1 h-px bg-t-line" />
                 <button
                   type="button"
                   onClick={() => {
@@ -2226,7 +2289,7 @@ export default function App() {
                     setSettingsTab('model')
                     setSettingsOpen(true)
                   }}
-                  className="mt-1 flex w-full items-center gap-2 rounded-xl border-t border-t-line px-3 py-2.5 text-left text-[12px] transition-colors hover:bg-t-tint/10"
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-[12px] transition-colors hover:bg-t-tint/10"
                 >
                   <span className={`h-2 w-2 shrink-0 rounded-full ${llmStatus === 'ok' ? 'bg-emerald-500' : llmStatus === 'error' ? 'bg-red-500' : llmStatus === 'unset' ? 'bg-amber-500' : 'bg-t-subtle'}`} aria-hidden />
                   <span className="min-w-0 flex-1 truncate text-t-muted">
@@ -2293,23 +2356,25 @@ export default function App() {
             const t = e.currentTarget
             setAtBottom(t.scrollHeight - t.scrollTop - t.clientHeight < 80)
           }}
-          className="no-scrollbar relative min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6"
+          className="aoi-scroll relative min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6"
         >
           {emptyVisible && (
             <div className={`absolute inset-0 flex flex-col items-center px-4 pb-3 text-center ${empty ? 'aoi-fade-in' : 'aoi-fade-out pointer-events-none'}`}>
-              <div className="flex flex-1 flex-col items-center justify-center pt-10">
+              <div className="flex flex-1 flex-col items-center justify-center pt-4 md:pt-10 md:short:pt-2">
                 <div className="relative">
                   <span
-                    className="aoi-breathe absolute -inset-20 rounded-full blur-xl"
+                    className="aoi-breathe absolute -inset-14 rounded-full blur-xl md:-inset-20"
                     style={{ background: 'radial-gradient(circle at 30% 35%, rgba(56,189,248,0.45) 0%, transparent 55%), radial-gradient(circle at 72% 70%, rgba(176,30,46,0.55) 0%, transparent 58%)' }}
                   />
                   <span
                     className="absolute -inset-6 rounded-full"
                     style={{ background: 'radial-gradient(circle, rgba(125,211,252,0.18) 0%, transparent 70%)' }}
                   />
-                  <Avatar state={avatarState} width={isWide ? 200 : 140} />
+                  <div className="[mask-image:linear-gradient(to_bottom,#000_70%,transparent)] [mask-repeat:no-repeat]">
+                    <Avatar state={avatarState} width={isWide ? 200 : 112} />
+                  </div>
                 </div>
-                <h1 className="relative mt-6 max-w-[260px] text-[22px] md:mt-8 md:max-w-[480px] md:text-[30px] font-bold leading-snug tracking-tight text-t-fg">
+                <h1 className="relative mt-3 max-w-[260px] text-[22px] md:mt-8 md:max-w-[480px] md:text-[30px] md:short:mt-4 md:short:text-[26px] font-bold leading-snug tracking-tight text-t-fg">
                   Hi, I’m AOI. How can I help you today?
                 </h1>
                 {llmStatus === 'unset' && (
@@ -2319,16 +2384,16 @@ export default function App() {
                       setSettingsTab('model')
                       setSettingsOpen(true)
                     }}
-                    className="relative mt-4 flex items-center gap-2.5 rounded-full border border-amber-500/40 bg-amber-500/10 py-1.5 pl-2 pr-3.5 text-[12.5px] font-medium text-t-fg transition-colors hover:bg-amber-500/20"
+                    className="relative mt-3 flex min-h-[44px] max-w-full items-center gap-2.5 rounded-2xl border border-amber-500/40 bg-amber-500/10 py-2 pl-2 pr-3.5 text-left text-[12.5px] font-medium leading-snug text-t-fg transition-colors hover:bg-amber-500/20 md:mt-4 md:min-h-0 md:rounded-full md:py-1.5"
                   >
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/25 text-amber-500">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500/25 text-amber-500">
                       <svg {...ico} width={14} height={14}><path d="M12 9v4M12 17h.01" /><circle cx="12" cy="12" r="9" /></svg>
                     </span>
-                    No language model connected yet. <span className="font-semibold text-t-accent">Connect one</span>
+                    <span className="min-w-0">No language model connected yet. <span className="whitespace-nowrap font-semibold text-t-accent">Connect one</span></span>
                   </button>
                 )}
               </div>
-              <div className="grid w-full max-w-[760px] grid-cols-1 gap-2.5 md:grid-cols-3 md:gap-3">
+              <div className="mt-3 grid w-full min-w-0 max-w-[760px] grid-cols-1 gap-2 md:mt-5 md:grid-cols-3 md:gap-3 md:short:mt-3">
                 {ideas.map((s, i) => (
                   <button
                     key={s.title}
@@ -2338,9 +2403,9 @@ export default function App() {
                       inputRef.current?.focus()
                     }}
                     style={{ animationDelay: `${0.1 + i * 0.08}s` }}
-                    className="aoi-in group flex items-center gap-3 rounded-2xl border border-t-tint/10 bg-t-surface/60 px-4 py-3 text-left shadow-[0_6px_20px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-md transition-all duration-200 ease-in-out hover:-translate-y-0.5 hover:border-[#800000] hover:bg-[#800000]/15 active:scale-[0.98] md:flex-col md:items-start md:gap-2 md:p-4"
+                    className="aoi-in group flex min-h-[44px] min-w-0 items-center gap-3 rounded-2xl border border-t-tint/10 bg-t-surface/60 px-3.5 py-2.5 text-left md:px-4 md:py-3 shadow-elev-2 backdrop-blur-md transition-all duration-200 ease-in-out hover:-translate-y-0.5 hover:border-t-accent hover:bg-[#800000]/15 active:scale-[0.98] md:flex-col md:items-start md:gap-2 md:p-4"
                   >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#800000]/30 text-t-accent transition-colors duration-200 ease-in-out group-hover:bg-[#800000]/60 group-hover:text-t-fg">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#800000]/30 md:h-9 md:w-9 text-t-accent transition-colors duration-200 ease-in-out group-hover:bg-[#800000]/60 group-hover:text-t-fg">
                       <svg {...ico} width={18} height={18}>
                         {TAG_ICONS[s.tag]}
                       </svg>
@@ -2348,7 +2413,7 @@ export default function App() {
                     <span className="min-w-0">
                       <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-t-accent">{s.tag}</span>
                       <span className="mt-0.5 block text-[13px] font-semibold text-t-fg">{s.title}</span>
-                      <span className="mt-0.5 block text-[12px] leading-snug text-t-muted">{s.hint}</span>
+                      <span className="mt-0.5 block truncate text-[12px] leading-snug text-t-muted md:whitespace-normal">{s.hint}</span>
                     </span>
                   </button>
                 ))}
@@ -2392,7 +2457,14 @@ export default function App() {
                     >
                       <span className="whitespace-pre-wrap break-words">{m.text}</span>
                     </div>
-                    {settings.showTime && <span className="px-1 text-[10px] font-medium uppercase tracking-[0.5px] text-t-subtle">{m.time}</span>}
+                    <div className="flex items-center gap-0.5">
+                      {m.id === lastUserId && !busy && editingId !== m.id && (
+                        <ActionBtn label="Edit message" onClick={() => startEdit(m)}>
+                          <svg {...ico}><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" /></svg>
+                        </ActionBtn>
+                      )}
+                      {settings.showTime && <span className="px-1 text-[10px] font-medium uppercase tracking-[0.5px] text-t-subtle">{m.time}</span>}
+                    </div>
                   </div>
                 ) : (
                   <div key={m.id} className="aoi-in flex max-w-[92%] items-start gap-2.5 md:max-w-[88%]">
@@ -2402,7 +2474,7 @@ export default function App() {
                     <div className="flex min-w-0 flex-col items-start gap-1">
                     <span className="px-1 text-[11px] font-semibold tracking-wide text-t-soft">AOI</span>
                     <div
-                      className={`min-w-0 max-w-full break-words rounded-[20px] rounded-bl-[4px] border px-4 py-3 leading-relaxed text-t-fg shadow-[0_6px_20px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-[10px] ${m.error ? 'border-[#B01E2E]/50 bg-[#800000]/10' : 'border-t-tint/10 bg-t-surface/80'}`}
+                      className={`min-w-0 max-w-full break-words rounded-[20px] rounded-bl-[4px] border px-4 py-3 leading-relaxed text-t-fg shadow-elev-2 backdrop-blur-[10px] ${m.error ? 'border-[#B01E2E]/50 bg-[#800000]/10' : 'border-t-tint/10 bg-t-surface/80'}`}
                     >
                       <Rich text={m.text} />
                       {m.id === revealId && <span className="aoi-caret" aria-hidden />}
@@ -2532,7 +2604,7 @@ export default function App() {
             type="button"
             aria-label="Scroll to latest message"
             onClick={() => endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })}
-            className="aoi-in absolute bottom-3 left-1/2 z-10 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-t-tint/10 bg-t-surface/90 text-t-fg shadow-[0_6px_16px_rgba(0,0,0,0.4)] backdrop-blur-md transition-all duration-200 ease-in-out hover:border-[#800000]"
+            className="aoi-in absolute bottom-3 left-1/2 z-10 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-t-tint/10 bg-t-surface/90 text-t-fg shadow-elev-2 backdrop-blur-md transition-all duration-200 ease-in-out hover:border-t-accent"
           >
             <svg {...ico} width={18} height={18}><path d="M12 5v14M5 12l7 7 7-7" /></svg>
           </button>
@@ -2540,7 +2612,7 @@ export default function App() {
       </div>
 
       <footer
-        className="shrink-0 px-3 pt-2 md:px-6"
+        className="shrink-0 px-4 pt-2 md:px-6"
         style={{ paddingBottom: 'calc(12px + var(--sa-bottom))' }}
       >
         {attached.length > 0 && (
@@ -2586,6 +2658,15 @@ export default function App() {
           </p>
         )}
         {listening && <p className="mx-auto mb-2 max-w-[800px] text-center text-[12px] font-medium text-t-accent">Listening… tap the mic to stop</p>}
+        {editingId !== null && (
+          <div role="status" className="aoi-in mx-auto mb-2 flex max-w-[800px] items-center gap-2 rounded-xl border border-t-line2 bg-t-surface/80 py-1.5 pl-3 pr-1.5 text-[12.5px] text-t-soft backdrop-blur-md">
+            <svg {...ico} width={14} height={14} className="shrink-0 text-t-accent" aria-hidden><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" /></svg>
+            <span className="min-w-0 flex-1 truncate">Editing your last message. Send to replace it and get a new reply.</span>
+            <button type="button" onClick={cancelEdit} className="shrink-0 rounded-lg px-2.5 py-1 font-semibold text-t-fg transition-colors hover:bg-t-tint/10">
+              Cancel
+            </button>
+          </div>
+        )}
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -2593,7 +2674,7 @@ export default function App() {
             navigator.vibrate?.(8)
             send()
           }}
-          className="mx-auto flex w-full max-w-[800px] items-end gap-0.5 rounded-[24px] border border-t-tint/10 bg-t-surface/60 p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-[16px] transition-all duration-200 ease-in-out focus-within:border-[#800000] focus-within:shadow-[0_10px_30px_rgba(0,0,0,0.45),0_0_0_1px_#800000,0_0_18px_rgba(128,0,0,0.45)]"
+          className="mx-auto flex w-full max-w-[800px] items-end gap-0.5 rounded-[24px] border border-t-tint/10 bg-t-surface/60 p-1.5 shadow-[0_2px_8px_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-[16px] transition-all duration-200 ease-in-out focus-within:border-t-accent focus-within:shadow-[0_2px_8px_rgba(0,0,0,0.08),0_0_0_1px_#800000,0_0_18px_rgba(128,0,0,0.3)]"
         >
           <button
             type="button"
@@ -2685,7 +2766,7 @@ export default function App() {
           inert={!sheetOpen}
           role="dialog"
           aria-label="Chat background"
-          className={`relative w-full md:max-w-[480px] rounded-t-[24px] border-t border-t-tint/10 bg-t-deep px-5 pt-3 text-t-fg shadow-[0_-12px_40px_rgba(0,0,0,0.6)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${sheetOpen ? 'translate-y-0' : 'translate-y-full'}`}
+          className={`relative w-full md:max-w-[480px] rounded-t-[24px] border-t border-t-tint/10 bg-t-deep px-5 pt-3 text-t-fg transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${sheetOpen ? 'translate-y-0 shadow-[0_-12px_40px_rgba(0,0,0,0.6)]' : 'translate-y-full shadow-none'}`}
           style={{ paddingBottom: 'calc(20px + var(--sa-bottom))' }}
         >
           <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-t-tint/20" />
@@ -2760,7 +2841,7 @@ export default function App() {
 
       {settingsOpen && (
         <div className="aoi-overlay fixed inset-0 z-[70] flex items-center justify-center bg-black/60 px-5 backdrop-blur-[8px]" role="dialog" aria-modal="true" aria-label="Settings" onClick={() => setSettingsOpen(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="aoi-spring no-scrollbar max-h-[90vh] w-full max-w-[400px] overflow-y-auto rounded-[20px] border border-t-line bg-t-surface p-5 text-t-fg shadow-[0_12px_40px_rgba(0,0,0,0.5)] md:max-w-[500px] md:p-6">
+          <div onClick={(e) => e.stopPropagation()} className="aoi-spring no-scrollbar max-h-[90vh] w-full max-w-[400px] overflow-y-auto rounded-[20px] border border-t-line bg-t-surface p-5 text-t-fg shadow-elev-3 md:max-w-[500px] md:p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-[17px] font-bold">Settings</h2>
               <button type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-full text-t-muted transition-colors duration-200 ease-in-out hover:bg-t-tint/10 hover:text-t-fg">
@@ -2775,7 +2856,7 @@ export default function App() {
                   role="tab"
                   aria-selected={settingsTab === k}
                   onClick={() => setSettingsTab(k)}
-                  className={`flex items-center justify-center gap-1.5 rounded-[9px] py-2 text-[13.5px] font-semibold transition-all ${settingsTab === k ? 'bg-t-surface text-t-fg shadow-[0_2px_8px_rgba(0,0,0,0.25)]' : 'text-t-muted hover:text-t-fg'}`}
+                  className={`flex items-center justify-center gap-1.5 rounded-[9px] py-2 text-[13.5px] font-semibold transition-all ${settingsTab === k ? 'bg-t-surface text-t-fg shadow-elev-1' : 'text-t-muted hover:text-t-fg'}`}
                 >
                   {label}
                   {k === 'model' && <span className={`h-1.5 w-1.5 rounded-full ${llmStatus === 'ok' ? 'bg-emerald-500' : llmStatus === 'error' ? 'bg-red-500' : llmStatus === 'unset' ? 'bg-amber-500' : 'bg-t-subtle'}`} aria-hidden />}
@@ -2829,7 +2910,7 @@ export default function App() {
                           spellCheck={false}
                           inputMode="url"
                           maxLength={300}
-                          className="mt-1 h-10 w-full rounded-[10px] border border-t-line bg-t-input px-3 font-mono text-[12.5px] normal-case tracking-normal text-t-fg outline-none focus:border-[#800000]"
+                          className="mt-1 h-10 w-full rounded-[10px] border border-t-line bg-t-input px-3 font-mono text-[12.5px] normal-case tracking-normal text-t-fg outline-none focus:border-t-accent"
                         />
                       </label>
                       <label className="mt-2.5 block text-[11.5px] font-semibold uppercase tracking-[0.06em] text-t-muted">
@@ -2841,7 +2922,7 @@ export default function App() {
                           placeholder={which === 'local' ? 'e.g. llama3.1:8b' : 'e.g. meta-llama/llama-3.1-70b-instruct'}
                           spellCheck={false}
                           maxLength={120}
-                          className="mt-1 h-10 w-full rounded-[10px] border border-t-line bg-t-input px-3 font-mono text-[12.5px] normal-case tracking-normal text-t-fg outline-none focus:border-[#800000]"
+                          className="mt-1 h-10 w-full rounded-[10px] border border-t-line bg-t-input px-3 font-mono text-[12.5px] normal-case tracking-normal text-t-fg outline-none focus:border-t-accent"
                         />
                         <datalist id={listId}>{pr.models.map((m) => <option key={m} value={m} />)}</datalist>
                       </label>
@@ -2854,7 +2935,7 @@ export default function App() {
                             value={ep.apiKey}
                             onChange={(e) => setEp(which, { apiKey: e.target.value })}
                             maxLength={400}
-                            className="mt-1 h-10 w-full rounded-[10px] border border-t-line bg-t-input px-3 font-mono text-[12.5px] normal-case tracking-normal text-t-fg outline-none focus:border-[#800000]"
+                            className="mt-1 h-10 w-full rounded-[10px] border border-t-line bg-t-input px-3 font-mono text-[12.5px] normal-case tracking-normal text-t-fg outline-none focus:border-t-accent"
                           />
                           <span className="mt-1 block text-[11px] font-normal normal-case tracking-normal text-t-subtle">Keys entered here live in this browser. For a shared deployment, put cloud keys behind a university server proxy instead.</span>
                         </label>
@@ -2947,9 +3028,10 @@ export default function App() {
             <div className="mt-2 hidden items-center justify-center gap-3 text-[11px] text-t-subtle md:flex">
               <span><kbd className="rounded border border-t-line px-1">Ctrl</kbd> + <kbd className="rounded border border-t-line px-1">K</kbd> New chat</span>
               <span><kbd className="rounded border border-t-line px-1">/</kbd> Focus message</span>
+              <span className="hidden lg:inline"><kbd className="rounded border border-t-line px-1">Ctrl</kbd> + <kbd className="rounded border border-t-line px-1">B</kbd> Sidebar</span>
             </div>
             <div className="mt-3 flex gap-2">
-              <button type="button" onClick={() => setSettings(DEFAULT_SETTINGS)} className="h-11 flex-1 rounded-[12px] border border-t-line2 bg-t-line text-[14px] font-semibold transition-all duration-200 ease-in-out hover:brightness-125 active:scale-[0.98]">
+              <button type="button" onClick={() => setSettings(DEFAULT_SETTINGS)} className="h-11 flex-1 rounded-[12px] border border-t-line2 bg-t-tint/5 text-[14px] font-semibold transition-all duration-200 ease-in-out hover:bg-t-tint/10 active:scale-[0.98]">
                 Reset
               </button>
               <button type="button" onClick={clearAll} className="h-11 flex-1 rounded-[12px] border border-[#800000] bg-[#800000]/20 text-[14px] font-semibold text-t-accent transition-all duration-200 ease-in-out hover:bg-[#800000]/40 active:scale-[0.98]">
@@ -2967,7 +3049,7 @@ export default function App() {
 
       {pending && (
         <div className="aoi-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-5 backdrop-blur-[8px]" role="dialog" aria-modal="true" aria-labelledby="consent-title">
-          <div className="aoi-spring no-scrollbar max-h-[90vh] w-full max-w-[380px] overflow-y-auto md:max-w-[560px] md:p-6 rounded-[20px] border border-t-line bg-t-surface p-5 text-t-fg shadow-[0_4px_12px_rgba(0,0,0,0.4)]">
+          <div className="aoi-spring no-scrollbar max-h-[90vh] w-full max-w-[380px] overflow-y-auto md:max-w-[560px] md:p-6 rounded-[20px] border border-t-line bg-t-surface p-5 text-t-fg shadow-elev-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#800000]/30 text-t-accent">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
@@ -3025,7 +3107,7 @@ export default function App() {
                       onChange={(e) => setPending((p) => (p ? { ...p, rewritten: e.target.value } : p))}
                       rows={4}
                       aria-label="Rewritten prompt"
-                      className="mt-1.5 w-full resize-none rounded-lg border border-t-line bg-t-bg p-2 text-[12.5px] leading-relaxed text-t-fg outline-none focus:border-[#800000]"
+                      className="mt-1.5 w-full resize-none rounded-lg border border-t-line bg-t-bg p-2 text-[12.5px] leading-relaxed text-t-fg outline-none focus:border-t-accent"
                     />
                   ) : (
                     <p className="mt-1.5 text-[12.5px] leading-relaxed text-t-fg" aria-label="Rewritten prompt">{pending.rewritten}</p>

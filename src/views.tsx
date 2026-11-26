@@ -166,7 +166,7 @@ export function Login({ onLogin }: { onLogin: (email: string, id: string) => voi
     setBusy(true)
     window.setTimeout(() => onLogin(email.trim(), idn.trim()), 1400)
   }
-  const field = 'mt-1.5 w-full rounded-xl border bg-white/[0.06] px-4 py-3 text-[15px] text-white placeholder:text-white/35 outline-none transition-colors duration-200 focus:border-[#E5707E] focus:bg-white/[0.09]'
+  const field = 'mt-1.5 w-full rounded-xl border bg-white/[0.06] px-4 py-3 text-[15px] text-white placeholder:text-white/35 outline-none transition-colors duration-200 focus:border-[#E5707E] focus:bg-white/[0.09] autofill:[-webkit-text-fill-color:#fff]'
   const pts = [
     ['Data stays on campus', 'Queries are answered by university-hosted models first.'],
     ['Private by design', 'Personal details are stripped before any external lookup.'],
@@ -185,9 +185,9 @@ export function Login({ onLogin }: { onLogin: (email: string, id: string) => voi
           <div className="flex items-center gap-3">
             <MsuMark size={68} />
             <span className="h-8 w-px bg-white/25" />
-            <span className="flex items-center gap-1 text-[30px] font-extrabold tracking-tight">
+            <span className="flex items-center gap-1 text-[36px] font-extrabold leading-none tracking-tight">
               AOI
-              <span className="mt-2 h-2 w-2 rounded-full bg-[#B01E2E]" />
+              <span className="mt-3 h-2.5 w-2.5 rounded-full bg-[#B01E2E]" />
             </span>
           </div>
           <span className="rounded-full border border-white/25 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80">MSU-ZS</span>
@@ -201,7 +201,7 @@ export function Login({ onLogin }: { onLogin: (email: string, id: string) => voi
                 </span>
                 <span>
                   <span className="block text-[14px] font-bold">{t}</span>
-                  <span className="block text-[13px] text-white/60">{d}</span>
+                  <span className="mt-1 block text-[13px] text-white/60">{d}</span>
                 </span>
               </li>
             ))}
@@ -222,7 +222,7 @@ export function Login({ onLogin }: { onLogin: (email: string, id: string) => voi
           <svg {...ico} width={16} height={16} className="pointer-events-none absolute left-3.5 top-1/2 mt-[3px] -translate-y-1/2 text-white/40"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
           <input
             type="email"
-            autoComplete="username"
+            autoComplete="off"
             maxLength={254}
             spellCheck={false}
             value={email}
@@ -334,7 +334,7 @@ export function Portal({
     <div className="relative flex h-full min-h-0 flex-col">
       <BgVideo />
       <div aria-hidden className="pointer-events-none absolute inset-0 bg-t-bg/80" />
-      <header className="relative z-30 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-t-line bg-t-surface px-4 pb-2.5 pt-[calc(0.625rem+var(--sa-top))] shadow-[0_4px_20px_rgba(0,0,0,0.3)] md:px-8">
+      <header className="relative z-30 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-t-line bg-t-surface px-4 pb-2.5 pt-[calc(0.625rem+var(--sa-top))] shadow-elev-1 md:px-8">
         <div className="flex items-center gap-2.5">
           <MsuMark size={40} />
           <span className="hidden h-6 w-px bg-t-line2 sm:block" />
@@ -347,7 +347,7 @@ export function Portal({
         <button
           type="button"
           onClick={onSignOut}
-          className="order-2 ml-auto flex items-center gap-1.5 rounded-full border border-t-line2 px-3 py-1.5 text-[13px] font-semibold transition-colors duration-200 hover:border-[#800000] hover:bg-[#800000] hover:text-white active:scale-95 md:order-3 md:ml-0"
+          className="order-2 ml-auto flex items-center gap-1.5 rounded-full border border-t-line2 px-3 py-1.5 text-[13px] font-semibold transition-colors duration-200 hover:border-t-accent hover:bg-[#800000] hover:text-white active:scale-95 md:order-3 md:ml-0"
         >
           <svg {...ico} width={14} height={14}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5M21 12H9" /></svg>
           Sign Out
@@ -367,12 +367,12 @@ export function Portal({
       <main className="no-scrollbar relative min-h-0 flex-1 overflow-y-auto pb-[calc(2rem+var(--sa-bottom))]">
         <section
           className="aoi-fade-in relative overflow-hidden text-white"
-          style={{ background: 'linear-gradient(115deg, rgba(58,0,0,0.78) 0%, rgba(128,0,0,0.62) 55%, rgba(90,10,20,0.78) 100%)' }}
+          style={{ background: 'var(--hero)' }}
         >
           <span aria-hidden className="absolute inset-0 opacity-[0.07]" style={{ backgroundImage: 'repeating-linear-gradient(135deg, #fff 0 1px, transparent 1px 22px)' }} />
           <span aria-hidden className="absolute -right-10 top-1/2 h-72 w-72 -translate-y-1/2 rounded-full bg-sky-300/25 blur-3xl" />
-          <div className="relative mx-auto flex w-full max-w-[1040px] items-center justify-between gap-3 px-4 pt-6 md:px-8 md:pt-9">
-            <div className="min-w-0 pb-4 md:pb-6">
+          <div className="relative mx-auto flex w-full max-w-[1040px] items-center justify-between gap-3 px-4 pt-6 md:px-8 md:pt-9 lg:static">
+            <div className="min-w-0 pb-4 md:pb-6 lg:pr-[240px]">
               <p className="inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-black/20 px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[0.1em]">
                 <svg {...ico} width={12} height={12}><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /></svg>
                 Verified · {role}
@@ -383,7 +383,7 @@ export function Portal({
                 Welcome to the University Portal. How can we help you today?
               </p>
             </div>
-            <div className="relative -mb-px shrink-0 self-end">{avatar}</div>
+            <div className="relative -mb-px shrink-0 self-end [mask-image:linear-gradient(to_bottom,#000_70%,transparent)] [mask-repeat:no-repeat] lg:absolute lg:bottom-0 lg:right-[max(2rem,calc((100%-1040px)/2+2rem))] lg:mb-0 lg:[mask-image:none]">{avatar}</div>
           </div>
           <div className="relative mx-auto w-full max-w-[1040px] px-4 pb-6 md:px-8 md:pb-8">
               <form
@@ -408,7 +408,7 @@ export function Portal({
         <div className="mx-auto w-full max-w-[1040px] px-4 md:px-8">
           <div className="mt-5 grid grid-cols-3 gap-2.5 md:gap-3" aria-label="Overview">
             {stats.map((x) => (
-              <button key={x.label} type="button" onClick={() => onOpen(x.view)} className="rounded-xl border border-t-line bg-t-surface px-3 py-3 text-left transition-colors hover:border-[#800000] active:scale-[0.98] md:px-4">
+              <button key={x.label} type="button" onClick={() => onOpen(x.view)} className="rounded-2xl border border-t-line bg-t-surface px-3 py-3 text-left shadow-elev-1 transition-colors hover:border-t-accent active:scale-[0.98] md:px-4">
                 <span className="block font-mono text-[22px] font-bold leading-none text-t-accent md:text-[28px]">{x.value}</span>
                 <span className="mt-1.5 block text-[11px] leading-tight text-t-muted md:text-[12.5px]">{x.label}</span>
               </button>
@@ -419,10 +419,10 @@ export function Portal({
             <SectionHead n="01" title="Academic Services" sub="Institutional records and enrollment" />
             <div className="mt-3 grid grid-cols-1 gap-2.5 md:grid-cols-2 md:gap-3 lg:grid-cols-3">
               {SERVICES.filter((s) => s.title !== 'My Grades' || role === 'Student').map((s) => {
-                const cls = 'group flex items-center gap-3 rounded-lg border border-t-line bg-t-surface px-4 py-3 text-left transition-colors duration-200 hover:border-[#800000] hover:bg-t-tint/5 active:scale-[0.99]'
+                const cls = 'group flex items-center gap-3 rounded-2xl border border-t-line bg-t-surface px-4 py-3 shadow-elev-1 text-left transition-colors duration-200 hover:border-t-accent hover:bg-t-tint/5 active:scale-[0.99]'
                 const inner = (
                   <>
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#800000]/25 text-t-accent">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#800000]/25 text-t-accent">
                       <svg {...ico}>{s.icon}</svg>
                     </span>
                     <span className="min-w-0 flex-1">
@@ -450,7 +450,7 @@ export function Portal({
                   type="button"
                   onClick={() => onOpen(c.view)}
                   style={{ animationDelay: `${0.08 + i * 0.07}s`, ...(c.primary ? { background: 'linear-gradient(145deg, #800000, #4a0000)' } : undefined) }}
-                  className={`aoi-in group flex flex-col items-start gap-3 rounded-[20px] border p-5 text-left transition-all duration-200 ease-in-out hover:-translate-y-1 active:scale-[0.98] ${c.primary ? 'border-[#B01E2E]/60 text-white shadow-[0_10px_30px_rgba(128,0,0,0.45)]' : 'border-t-tint/10 bg-t-surface/70 shadow-[0_6px_20px_rgba(0,0,0,0.25)] backdrop-blur-md hover:border-[#800000]'}`}
+                  className={`aoi-in group flex flex-col items-start gap-3 rounded-2xl border p-5 text-left transition-all duration-200 ease-in-out hover:-translate-y-1 active:scale-[0.98] ${c.primary ? 'border-[#B01E2E]/60 text-white shadow-[0_10px_30px_rgba(128,0,0,0.45)]' : 'border-t-tint/10 bg-t-surface/70 shadow-elev-2 backdrop-blur-md hover:border-t-accent'}`}
                 >
                   <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${c.primary ? 'bg-white/15 text-white' : 'bg-[#800000]/30 text-t-accent group-hover:bg-[#800000]/60 group-hover:text-t-fg'}`}>
                     <svg {...ico} width={22} height={22}>{c.icon}</svg>
@@ -475,12 +475,12 @@ export function Portal({
                 <button key={t} type="button" aria-pressed={tag === t} onClick={() => setTag(t)} className={`shrink-0 rounded-full border px-3 py-1 text-[12px] font-semibold transition-colors ${tag === t ? 'border-[#800000] bg-[#800000] text-white' : 'border-t-line2 text-t-muted hover:text-t-fg'}`}>{t}</button>
               ))}
             </div>
-            <ul className="mt-3 divide-y divide-t-line overflow-hidden rounded-lg border border-t-line bg-t-surface">
+            <ul className="mt-3 divide-y divide-t-line overflow-hidden rounded-2xl border border-t-line bg-t-surface shadow-elev-1">
               {ANNOUNCEMENTS.filter((a) => tag === 'All' || a.tag === tag).map((a) => {
                 const [mon, day] = a.date.split(' ')
                 return (
                   <li key={a.title} className="flex gap-4 px-4 py-4 md:px-5">
-                    <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-md bg-[#800000] text-white">
+                    <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl bg-[#800000] text-white">
                       <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-white/75">{mon}</span>
                       <span className="text-[20px] font-extrabold leading-none">{day}</span>
                     </div>
@@ -527,9 +527,9 @@ export function AuditLog({ rows, onHome, focusCid, admin }: { rows: AuditRow[]; 
   const cols = ['Timestamp', 'Correlation ID', 'Role', 'Intent', 'Model Used', 'Path', 'External Call']
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-t-line bg-t-surface px-3 pb-2 pt-[calc(0.5rem+var(--sa-top))] shadow-[0_4px_20px_rgba(0,0,0,0.3)] md:px-6">
+      <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-t-line bg-t-surface px-3 pb-2 pt-[calc(0.5rem+var(--sa-top))] shadow-elev-1 md:px-6">
         <BackBtn onClick={onHome} label="Back to Portal" />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="truncate text-[16px] font-bold leading-tight">System Audit Log</h1>
           <p className="text-[11px] text-t-muted">{admin ? 'Administrator view · all accounts' : 'Your activity only'}</p>
         </div>
@@ -551,18 +551,18 @@ export function AuditLog({ rows, onHome, focusCid, admin }: { rows: AuditRow[]; 
                 type="button"
                 aria-pressed={filter === f}
                 onClick={() => setFilter(f)}
-                className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold capitalize transition-all duration-200 ${filter === f ? 'border-[#800000] bg-[#800000] text-white' : 'border-t-line2 bg-t-line text-t-soft hover:brightness-95'}`}
+                className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold capitalize transition-all duration-200 ${filter === f ? 'border-[#800000] bg-[#800000] text-white' : 'border-t-line2 text-t-soft hover:bg-t-tint/5 hover:text-t-fg'}`}
               >
                 {f === 'all' ? 'All' : f === 'external' ? 'External only' : 'Queued only'}
               </button>
             ))}
-            <label className="ml-auto flex h-9 min-w-[160px] flex-1 items-center gap-2 rounded-full border border-t-line bg-t-input px-3 focus-within:border-[#800000] md:max-w-[240px] md:flex-none">
+            <label className="ml-auto flex h-9 min-w-[160px] flex-1 items-center gap-2 rounded-full border border-t-line bg-t-input px-3 focus-within:border-t-accent md:max-w-[240px] md:flex-none">
               <svg {...ico} width={14} height={14}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find ID…" aria-label="Find correlation ID" className="min-w-0 flex-1 bg-transparent font-mono text-[12px] outline-none placeholder:text-t-subtle" />
             </label>
           </div>
 
-          <div className="mt-4 hidden overflow-hidden rounded-2xl border border-t-tint/10 bg-t-surface/80 shadow-[0_10px_30px_rgba(0,0,0,0.25)] backdrop-blur-md md:block">
+          <div className="mt-4 hidden overflow-hidden rounded-2xl border border-t-tint/10 bg-t-surface/80 shadow-elev-2 backdrop-blur-md md:block">
             <div className="no-scrollbar overflow-x-auto">
               <table className="w-full min-w-[920px] border-collapse text-left text-[13px]">
                 <thead>
@@ -613,7 +613,14 @@ export function AuditLog({ rows, onHome, focusCid, admin }: { rows: AuditRow[]; 
               </li>
             ))}
           </ul>
-          {!list.length && <p className="py-10 text-center text-[13px] text-t-subtle">No matching entries.</p>}
+          {!list.length && (
+            <div className="flex flex-col items-center gap-2 py-12 text-center">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-t-tint/5 text-t-muted">
+                <svg {...ico} width={20} height={20}><path d="M9 3h6l1 2h3v16H5V5h3z" /><path d="M9 12h6M9 16h4" /></svg>
+              </span>
+              <p className="text-[13px] text-t-muted">No matching entries.</p>
+            </div>
+          )}
           <p className="mt-4 flex items-center gap-2 text-[11.5px] text-t-muted">
             <span className="inline-block h-3 w-5 rounded bg-[#800000]/40" /> Highlighted rows left the Data Sovereignty Boundary (anonymized external call).
           </p>
@@ -636,7 +643,7 @@ export function SourceSheet({ label, onClose, onAsk }: { label: string | null; o
         inert={!open}
         role="dialog"
         aria-label="Source excerpt"
-        className={`relative w-full rounded-t-[24px] border-t border-t-tint/10 bg-t-deep px-5 pt-3 text-t-fg shadow-[0_-12px_40px_rgba(0,0,0,0.6)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] md:max-w-[560px] ${open ? 'translate-y-0' : 'translate-y-full'}`}
+        className={`relative w-full rounded-t-[24px] border-t border-t-tint/10 bg-t-deep px-5 pt-3 text-t-fg transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] md:max-w-[560px] ${open ? 'translate-y-0 shadow-[0_-12px_40px_rgba(0,0,0,0.6)]' : 'translate-y-full shadow-none'}`}
         style={{ paddingBottom: 'calc(20px + var(--sa-bottom))' }}
       >
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-t-tint/20" />
@@ -718,13 +725,13 @@ export function AccountSettings({
   const label = 'mb-2 mt-6 text-[12px] font-semibold uppercase tracking-[0.08em] text-t-muted'
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-t-line bg-t-surface px-3 pb-2 pt-[calc(0.5rem+var(--sa-top))] shadow-[0_4px_20px_rgba(0,0,0,0.3)] md:px-6">
+      <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-t-line bg-t-surface px-3 pb-2 pt-[calc(0.5rem+var(--sa-top))] shadow-elev-1 md:px-6">
         <BackBtn onClick={onHome} label="Back to Portal" />
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-[16px] font-bold leading-tight">Account Settings</h1>
           <p className="truncate text-[11px] text-t-muted">Profile, appearance and session</p>
         </div>
-        <button type="button" onClick={onSignOut} className="flex h-9 items-center gap-1.5 rounded-full border border-t-line2 px-3 text-[13px] font-semibold transition-colors hover:border-[#800000] hover:bg-[#800000] hover:text-white active:scale-95">
+        <button type="button" onClick={onSignOut} className="flex h-9 items-center gap-1.5 rounded-full border border-t-line2 px-3 text-[13px] font-semibold transition-colors hover:border-t-accent hover:bg-[#800000] hover:text-white active:scale-95">
           <svg {...ico} width={14} height={14}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5M21 12H9" /></svg>
           Log out
         </button>
@@ -775,7 +782,7 @@ export function AccountSettings({
 
           <p className={label}>Data on this device</p>
           <div className="flex gap-2">
-            <button type="button" onClick={onReset} className="h-11 flex-1 rounded-[12px] border border-t-line2 bg-t-line text-[14px] font-semibold transition-all hover:brightness-95 active:scale-[0.98]">Reset preferences</button>
+            <button type="button" onClick={onReset} className="h-11 flex-1 rounded-[12px] border border-t-line2 bg-t-tint/5 text-[14px] font-semibold transition-all hover:bg-t-tint/10 active:scale-[0.98]">Reset preferences</button>
             <button type="button" onClick={onClearChats} disabled={!chatCount} className="h-11 flex-1 rounded-[12px] border border-[#800000] bg-[#800000]/20 text-[14px] font-semibold text-t-accent transition-all hover:bg-[#800000]/40 active:scale-[0.98] disabled:opacity-40">Clear {chatCount} chats</button>
           </div>
 
@@ -797,9 +804,9 @@ const TIERS: { tier: string; name: string; sub: string; model: string; where: 'l
 ]
 
 const SubHeader = ({ title, sub, onHome }: { title: string; sub: string; onHome: () => void }) => (
-  <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-t-line bg-t-surface px-3 pb-2 pt-[calc(0.5rem+var(--sa-top))] shadow-[0_4px_20px_rgba(0,0,0,0.3)] md:px-6">
+  <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-t-line bg-t-surface px-3 pb-2 pt-[calc(0.5rem+var(--sa-top))] shadow-elev-1 md:px-6">
     <BackBtn onClick={onHome} label="Back to Portal" />
-    <div className="min-w-0">
+    <div className="min-w-0 flex-1">
       <h1 className="truncate text-[16px] font-bold leading-tight">{title}</h1>
       <p className="truncate text-[11px] text-t-muted">{sub}</p>
     </div>
@@ -814,10 +821,10 @@ export function AboutAOI({ onHome }: { onHome: () => void }) {
     { n: 'General', d: 'Everyday campus questions answered by a local model.' },
     { n: 'GPU queue', d: 'The campus GPU answers one request at a time. Students and faculty are served first come, first served, and you see your place in line.' },
   ]
-  const pillars = [
-    ['Data sovereignty', 'Queries stay on university systems unless you approve an anonymized external lookup.'],
-    ['Privacy by design', 'A PII Stripper removes names, IDs, emails and course codes before anything leaves.'],
-    ['Traceable', 'Every answer carries a correlation ID that links to the audit log.'],
+  const pillars: [string, string, React.ReactNode][] = [
+    ['Data sovereignty', 'Queries stay on university systems unless you approve an anonymized external lookup.', <><rect x="4" y="4" width="16" height="7" rx="2" /><rect x="4" y="13" width="16" height="7" rx="2" /><path d="M8 7.5h.01M8 16.5h.01" /></>],
+    ['Privacy by design', 'A PII Stripper removes names, IDs, emails and course codes before anything leaves.', <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />],
+    ['Traceable', 'Every answer carries a correlation ID that links to the audit log.', <><path d="M9 3h6l1 2h3v16H5V5h3z" /><path d="M9 12h6M9 16h4" /></>],
   ]
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -831,8 +838,11 @@ export function AboutAOI({ onHome }: { onHome: () => void }) {
           </p>
 
           <div className="mt-8 grid gap-3 md:grid-cols-3">
-            {pillars.map(([t, d]) => (
-              <div key={t} className="rounded-xl border border-t-line bg-t-surface p-4">
+            {pillars.map(([t, d, icon]) => (
+              <div key={t} className="rounded-2xl border border-t-line bg-t-surface p-4 shadow-elev-1">
+                <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-[#800000]/25 text-t-accent">
+                  <svg {...ico} width={18} height={18}>{icon}</svg>
+                </span>
                 <p className="text-[14px] font-bold">{t}</p>
                 <p className="mt-1 text-[12.5px] leading-relaxed text-t-muted">{d}</p>
               </div>
@@ -840,7 +850,7 @@ export function AboutAOI({ onHome }: { onHome: () => void }) {
           </div>
 
           <h3 className="mt-9 border-b-2 border-[#800000] pb-2 text-[17px] font-extrabold">How AOI routes your question</h3>
-          <ol className="mt-3 divide-y divide-t-line overflow-hidden rounded-lg border border-t-line bg-t-surface">
+          <ol className="mt-3 divide-y divide-t-line overflow-hidden rounded-2xl border border-t-line bg-t-surface shadow-elev-1">
             {paths.map((p, i) => (
               <li key={p.n} className="flex gap-4 px-4 py-3.5">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#800000] font-mono text-[12px] font-bold text-white">{i + 1}</span>
@@ -928,7 +938,7 @@ export function ResearchHub({ onHome, onStart, prompts }: { onHome: () => void; 
           <h3 className="mt-9 border-b-2 border-[#800000] pb-2 text-[17px] font-extrabold">Start a research chat</h3>
           <div className="mt-3 grid grid-cols-1 gap-2.5 md:grid-cols-2">
             {prompts.map((p) => (
-              <button key={p.title} type="button" onClick={() => onStart(p.prompt)} className="group flex min-w-0 items-center justify-between gap-3 rounded-lg border border-t-line bg-t-surface px-4 py-3 text-left transition-colors hover:border-[#800000] active:scale-[0.99]">
+              <button key={p.title} type="button" onClick={() => onStart(p.prompt)} className="group flex min-w-0 items-center justify-between gap-3 rounded-lg border border-t-line bg-t-surface px-4 py-3 text-left transition-colors hover:border-t-accent active:scale-[0.99]">
                 <span className="min-w-0 flex-1">
                   <span className="block text-[14px] font-bold">{p.title}</span>
                   <span className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-t-muted">{p.prompt}</span>
@@ -1200,7 +1210,7 @@ export function AoiProfile({ onBack, renderFigure, aspect }: { onBack: () => voi
   )
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-t-line bg-t-surface px-3 pb-2 pt-[calc(0.5rem+var(--sa-top))] shadow-[0_4px_20px_rgba(0,0,0,0.3)] md:px-6">
+      <header className="relative z-30 flex shrink-0 items-center gap-2 border-b border-t-line bg-t-surface px-3 pb-2 pt-[calc(0.5rem+var(--sa-top))] shadow-elev-1 md:px-6">
         <button type="button" aria-label="Back to chat" onClick={onBack} className="flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-200 hover:bg-t-tint/10 active:scale-90">
           <svg {...ico} width={20} height={20}><path d="M15 18l-6-6 6-6" /></svg>
         </button>
